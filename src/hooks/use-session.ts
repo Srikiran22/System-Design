@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/neet/auth-client";
 
 /** Client-side session for UI affordances (nav avatar etc.). Server calls re-validate the bearer. */
 export function useSession() {
@@ -8,12 +8,12 @@ export function useSession() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
+    authClient.getSession().then(({ data }) => {
       if (!alive) return;
       setUser(data.session?.user ?? null);
       setReady(true);
     });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data } = authClient.onAuthStateChange((_e, s) => {
       setUser(s?.user ?? null);
       setReady(true);
     });

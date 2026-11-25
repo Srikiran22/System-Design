@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Link from "@/components/neet/AppLink";
 import { DISCIPLINES, PATHS, STAGES, SKILLS } from "@/lib/neet/content";
 import { pathProgress } from "@/lib/neet/derive";
@@ -10,6 +11,7 @@ import SkillRadar from "./SkillRadar";
 export default function Dashboard() {
   const hydrated = useHydrated();
   const { evidence, completed, saved } = useProgress();
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   if (!hydrated) {
     return (
@@ -200,15 +202,35 @@ export default function Dashboard() {
           >
             Replace with sample data
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm("Erase all progress stored in this browser?")) actions.reset();
-            }}
-            className="text-warn underline underline-offset-4"
-          >
-            Reset my progress
-          </button>
+          {confirmingReset ? (
+            <span className="inline-flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  actions.reset();
+                  setConfirmingReset(false);
+                }}
+                className="font-medium text-warn underline underline-offset-4"
+              >
+                Confirm erase all local progress
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingReset(false)}
+                className="text-muted underline underline-offset-4 hover:text-text"
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingReset(true)}
+              className="text-warn underline underline-offset-4"
+            >
+              Reset my progress
+            </button>
+          )}
         </div>
       )}
     </div>

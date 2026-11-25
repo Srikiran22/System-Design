@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/neet/auth-client";
 import { authErrorMessage } from "@/hooks/use-session";
 import { pageHead } from "@/lib/neet/meta";
 
@@ -33,7 +33,7 @@ function AuthPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    authClient.getUser().then(({ data }) => {
       if (data.user) navigate({ to: safeRedirect(redirect), replace: true });
     });
   }, [navigate, redirect]);
@@ -51,11 +51,11 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email: em, password });
+        const { error } = await authClient.signInWithPassword({ email: em, password });
         if (error) throw error;
         navigate({ to: safeRedirect(redirect), replace: true });
       } else if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await authClient.signUp({
           email: em,
           password,
           options: {
@@ -67,7 +67,7 @@ function AuthPage() {
         if (data.session) navigate({ to: safeRedirect(redirect), replace: true });
         else setNotice("Check your inbox to confirm your email, then sign in.");
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(em, {
+        const { error } = await authClient.resetPasswordForEmail(em, {
           redirectTo: window.location.origin + "/reset-password",
         });
         if (error) throw error;

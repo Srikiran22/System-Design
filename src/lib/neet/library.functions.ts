@@ -180,7 +180,7 @@ export const listSources = createServerFn({ method: "GET" }).handler(
       return ALL_ENRICHED_SOURCES;
     }
 
-    return raw.map((s) => {
+    return raw.map((s): EnrichedSource => {
       const enriched = ENRICHED_SOURCES[s.source_id];
       return {
         source_id: s.source_id,
@@ -190,7 +190,7 @@ export const listSources = createServerFn({ method: "GET" }).handler(
         relevance: s.relevance || enriched?.relevance || "",
         quality_signal: s.quality_signal || enriched?.quality_signal || "",
         limitations: s.limitations || enriched?.limitations || "",
-        audit: enriched?.audit,
+        ...(enriched?.audit ? { audit: enriched.audit } : {}),
         domain_topics: enriched?.domain_topics || [],
         summary: enriched?.summary || s.relevance || "",
         takeaways: enriched?.takeaways || "",

@@ -40,6 +40,11 @@ export function AsciiParticles({ className = "" }: { className?: string }) {
       const r = canvas.getBoundingClientRect();
       w = r.width;
       h = r.height;
+      if (w < 1 || h < 1) {
+        cols = 0;
+        rows = 0;
+        return;
+      }
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -184,6 +189,10 @@ export function AsciiSignature({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       cols = Math.floor(w / cell);
       rows = Math.floor(h / cell);
+      if (cols < 1 || rows < 1) {
+        mask = new Float32Array(0);
+        return;
+      }
       const off = document.createElement("canvas");
       off.width = cols;
       off.height = rows;

@@ -17,7 +17,7 @@ import Footer from "@/components/neet/Footer";
 import CommandPalette from "@/components/neet/CommandPalette";
 import ProgressSync from "@/components/neet/ProgressSync";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/neet/auth-client";
 
 function NotFoundComponent() {
   return (
@@ -114,7 +114,7 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
+    const { data } = authClient.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();

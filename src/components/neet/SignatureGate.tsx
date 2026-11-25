@@ -21,11 +21,19 @@ export default function SignatureGate() {
   const [saving, setSaving] = useState(false);
   const raf = useRef(0);
   const start = useRef(0);
+  const prefilled = useRef(false);
+  const completed = useRef(false);
 
   useEffect(() => {
-    if (me && !name)
-      setName(me.profile.display_name || (user?.user_metadata?.["display_name"] as string) || "");
-  }, [me, user, name]);
+    if (me && !prefilled.current) {
+      prefilled.current = true;
+      const initial =
+        me.profile.display_name || (user?.user_metadata?.["display_name"] as string) || "";
+      if (initial) setName(initial);
+    }
+  }, [me, user]);
+
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
   const open = !!user && !!me && !me.profile.signed_at;
   const initials = initialsFrom(name || "U");
@@ -43,6 +51,7 @@ export default function SignatureGate() {
       qc.invalidateQueries({ queryKey: ["me"] });
     } catch (e) {
       toast.error((e as Error).message || "Couldn't save. Try again.");
+      completed.current = false;
       setProgress(0);
     } finally {
       setSaving(false);
@@ -53,25 +62,26 @@ export default function SignatureGate() {
     const p = Math.min(1, (performance.now() - start.current) / HOLD_MS);
     setProgress(p);
     if (p >= 1) {
+      completed.current = true;
       finish();
       return;
     }
     raf.current = requestAnimationFrame(tick);
   };
   const down = () => {
-    if (!ready || saving) return;
+    if (!ready || saving || completed.current) return;
     start.current = performance.now();
     raf.current = requestAnimationFrame(tick);
   };
   const up = () => {
     cancelAnimationFrame(raf.current);
-    if (progress < 1) setProgress(0);
+    if (!completed.current) setProgress(0);
   };
 
   return (
     <Dialog open={open}>
       <DialogContent
-        className="max-w-md rounded-3xl [&>button]:hidden"
+        className="max-w-md rounded-3xl [&>button:last-child]:hidden"
         onEscapeKeyDown={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
       >

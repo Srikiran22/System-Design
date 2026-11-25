@@ -25,24 +25,26 @@ function Sources() {
   const [activeHash, setActiveHash] = useState<string>("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return;
+    const applyHash = () => {
       const hash = window.location.hash.replace("#", "");
-      if (hash) {
-        setActiveHash(hash);
-        // Find index of targeted source and expand limit if needed
-        const idx = sources.findIndex((s) => s.source_id.toLowerCase() === hash.toLowerCase());
-        if (idx >= 0 && idx >= limit) {
-          setLimit(idx + 20);
-        }
-        setTimeout(() => {
-          const el = document.getElementById(hash);
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        }, 200);
+      if (!hash) return;
+      setActiveHash(hash);
+      const idx = sources.findIndex((s) => s.source_id.toLowerCase() === hash.toLowerCase());
+      if (idx >= 0) {
+        setLimit((prev) => (idx >= prev ? idx + 20 : prev));
       }
-    }
-  }, [sources, limit]);
+      setTimeout(() => {
+        const el = document.getElementById(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 200);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [sources]);
 
   const types = useMemo(() => {
     const c = new Map<string, number>();

@@ -55,7 +55,9 @@ function Library() {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      navigate({ search: (p) => ({ ...p, q: input || undefined }), replace: true });
+      if (input !== q) {
+        navigate({ search: (p) => ({ ...p, q: input || undefined }), replace: true });
+      }
       if (input.trim().length >= 3)
         searchArticles({ data: input })
           .then(setBodyHits)
@@ -63,7 +65,7 @@ function Library() {
       else setBodyHits(null);
     }, 250);
     return () => clearTimeout(t);
-  }, [input, navigate]);
+  }, [input, q, navigate]);
 
   const tracks = useMemo(
     () =>

@@ -28,7 +28,7 @@ function enrichMarkdownCitations(body: string): string {
         // Check for multiple or single S-id: e.g. S01, S02 or S274, S275
         const sMatches = trimmed.match(/S\d{2,3}/g);
         if (sMatches && sMatches.length > 0 && /^[S\d\s,–—-]+$/.test(trimmed)) {
-          return sMatches.map((sid) => `[${sid}](cite:${sid})`).join(" ");
+          return sMatches.map((sid: string) => `[${sid}](cite:${sid})`).join(" ");
         }
 
         // Check single alias or standard

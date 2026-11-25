@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/neet/auth-client";
 import { authErrorMessage } from "@/hooks/use-session";
 import { pageHead } from "@/lib/neet/meta";
 
@@ -13,7 +13,7 @@ function ResetPage() {
 
   useEffect(() => {
     if (window.location.hash.includes("type=recovery")) setReady(true);
-    const { data } = supabase.auth.onAuthStateChange((e) => {
+    const { data } = authClient.onAuthStateChange((e) => {
       if (e === "PASSWORD_RECOVERY") setReady(true);
     });
     return () => data.subscription.unsubscribe();
@@ -23,7 +23,7 @@ function ResetPage() {
     e.preventDefault();
     if (pw.length < 8) return setError("Password must be at least 8 characters.");
     setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password: pw });
+    const { error } = await authClient.updateUser({ password: pw });
     setBusy(false);
     if (error) return setError(authErrorMessage(error));
     navigate({ to: "/me", replace: true });

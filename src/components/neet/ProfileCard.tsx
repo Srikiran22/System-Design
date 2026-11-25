@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/neet/auth-client";
 import { useMe } from "@/hooks/use-me";
 import { addGoal, removeGoal } from "@/lib/neet/account.functions";
 import { bucketByDay, streaks } from "@/lib/neet/progress-math";
@@ -50,7 +50,7 @@ export default function ProfileMenu() {
     setOpen(false);
     await qc.cancelQueries();
     qc.clear();
-    await supabase.auth.signOut();
+    await authClient.signOut();
     navigate({ to: "/auth", replace: true });
   };
 

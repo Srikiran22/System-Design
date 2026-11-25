@@ -250,6 +250,7 @@ function getContentPackDir(): string {
 }
 
 let _db: DatabaseSync | null = null;
+let _isMemory = false;
 
 function getDbFilePath(): string {
   if (process.env["SQLITE_DB_PATH"]) return process.env["SQLITE_DB_PATH"];
@@ -270,7 +271,8 @@ export function getDatabase(): DatabaseSync {
     const dbPath = getDbFilePath();
     try {
       _db = new DatabaseSync(dbPath);
-      if (dbPath !== ":memory:") {
+      _isMemory = dbPath === ":memory:";
+      if (!_isMemory) {
         _db.exec("PRAGMA journal_mode = WAL;");
         _db.exec("PRAGMA synchronous = NORMAL;");
         _db.exec("PRAGMA busy_timeout = 5000;");
@@ -283,6 +285,7 @@ export function getDatabase(): DatabaseSync {
         "falling back to :memory:",
         e,
       );
+      _isMemory = true;
       _db = new DatabaseSync(":memory:");
       _db.exec("PRAGMA foreign_keys = ON;");
     }
@@ -1037,8 +1040,8 @@ export function getSystemHealth(): SystemHealth {
     database: {
       provider: "sqlite_sync",
       engine: "node:sqlite DatabaseSync",
-      walMode: true,
-      filePath: getDbFilePath(),
+      walMode: !_isMemory,
+      filePath: _isMemory ? ":memory:" : getDbFilePath(),
       counts,
     },
     runtime: {

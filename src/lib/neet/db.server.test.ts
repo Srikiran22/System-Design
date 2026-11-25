@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+// @vitest-environment node
+import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import crypto from "node:crypto";
 import {
