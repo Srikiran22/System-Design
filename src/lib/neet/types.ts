@@ -1,6 +1,10 @@
 export type Stage = "search" | "know" | "adapt" | "proceed";
 export type Discipline = "thinking" | "design" | "engineering";
 export type EvidenceType = "quiz" | "explain" | "variant" | "lab" | "artifact" | "review";
+export type VerificationTier =
+  "self-assessed" | "automated-check" | "rubric-evaluated" | "reviewer-verified";
+export type FreshnessStatus = "fresh" | "aging" | "stale" | "none";
+export type BloomLevel = "apply" | "analyze" | "evaluate" | "create";
 
 export interface Skill {
   id: string;
@@ -20,8 +24,16 @@ export interface Evidence {
   at: string;
   /** self-rated confidence 0..1 (for calibration) */
   confidence?: number;
-  /** what produced this evidence (pause id, lab id) */
+  /** what produced this evidence (pause id, lab id, capstone milestone) */
   ref?: string;
+  /** deterministic idempotency key for durable sync */
+  idempotencyKey?: string;
+  /** provenance of evaluation — separates self-report from automated & rubric-checked work */
+  verificationTier?: VerificationTier;
+  rubricVersion?: string;
+  rubricScores?: Record<string, number>;
+  artifactUrl?: string;
+  artifactNotes?: string;
 }
 
 export type Level = 0 | 1 | 2 | 3 | 4;
@@ -30,6 +42,13 @@ export interface SkillProgress {
   skillId: string;
   level: Level;
   mastery: number;
+  /** 0..1 evidence coverage toward target weight */
+  coverage: number;
+  /** 0..1 time-decayed weighted evidence quality */
+  quality: number;
+  freshness: FreshnessStatus;
+  verificationTier: VerificationTier | "none";
+  formulaVersion: string;
   lastEvidenceAt?: string | undefined;
   evidenceCount: number;
   gate?: string | undefined;
@@ -91,6 +110,20 @@ export interface Lab {
   steps: string[];
   twist: string;
   artifact: string;
+}
+
+export interface ArtifactAttempt {
+  attemptNumber: number;
+  at: string;
+  note: string;
+  artifactUrl?: string;
+  twistResponse?: string;
+  rubricVersion: string;
+  rubricScores: Record<string, number>;
+  weightedScore: number;
+  passedThreshold: boolean;
+  feedbackSummary: string[];
+  verificationTier: VerificationTier;
 }
 
 export interface LearningRepo {

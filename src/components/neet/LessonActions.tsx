@@ -34,24 +34,51 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
   const saved = explains[key];
   const [text, setText] = useState("");
   const [rating, setRating] = useState(0);
+  const [editing, setEditing] = useState(false);
+
+  const showEditor = !saved || editing;
 
   return (
     <div className="mt-14 max-w-[68ch] space-y-8">
-      <section aria-labelledby="explain" className="rounded-3xl bg-surface p-6">
-        <p className="font-label text-xs uppercase tracking-widest text-accent">Explain it back</p>
+      <section aria-labelledby="explain" className="rounded-3xl border border-line bg-surface p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-label text-xs uppercase tracking-widest text-accent">
+            Explain it back
+          </p>
+          <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] text-muted">
+            Self-assessed evidence (L1–L2)
+          </span>
+        </div>
         <h2 id="explain" className="mt-2 font-display text-xl">
           Say it in your own words.
         </h2>
         <p className="mt-1 text-sm text-muted">
-          Two or three sentences, as if to a friend. Then rate how well you think you did. Rating is
-          self-assessed and counts as evidence.
+          Cover three things: (1) the core mechanism, (2) what constraint or failure mode breaks it,
+          and (3) when you would deliberately choose a different approach. Self-assessed recall
+          strengthens Know (L2); Adapt (L3) and Proceed (L4) require rubric-evaluated labs or
+          artifacts.
         </p>
-        {saved ? (
-          <div className="mt-4 rounded-lg bg-surface-2 p-4">
-            <p className="whitespace-pre-wrap text-text">{saved.text}</p>
-            <p className="mt-2 font-label text-xs text-muted">
-              Self-rating: {["", "Shaky", "OK", "Solid"][saved.rating]}
-            </p>
+
+        {!showEditor && saved ? (
+          <div className="mt-4 rounded-2xl bg-surface-2 p-4">
+            <p className="whitespace-pre-wrap text-sm text-text">{saved.text}</p>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 font-label text-xs text-muted">
+              <span>
+                Self-rating: {["", "Shaky", "OK", "Solid"][saved.rating]}
+                {saved.revisions ? ` · Revision ${saved.revisions}` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setText(saved.text);
+                  setRating(saved.rating);
+                  setEditing(true);
+                }}
+                className="text-accent underline underline-offset-4"
+              >
+                Revise explanation
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -63,8 +90,8 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={4}
-              className="mt-4 w-full rounded-lg border border-line bg-bg p-3 text-text placeholder:text-muted"
-              placeholder="In my own words…"
+              className="mt-4 w-full rounded-xl border border-line bg-bg p-3 text-sm text-text placeholder:text-muted"
+              placeholder="Mechanism: … Failure boundary: … When NOT to use it: …"
             />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {["Shaky", "OK", "Solid"].map((l, i) => (
@@ -78,14 +105,28 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
                   {l}
                 </button>
               ))}
-              <button
-                type="button"
-                disabled={text.trim().length < 20 || rating === 0}
-                onClick={() => actions.explainBack(key, skillId, text.trim(), rating)}
-                className="ml-auto btn-ink text-sm  disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Save explanation
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(false)}
+                    className="rounded-full border border-line px-3 py-1 text-xs text-muted"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={text.trim().length < 20 || rating === 0}
+                  onClick={() => {
+                    actions.explainBack(key, skillId, text.trim(), rating);
+                    setEditing(false);
+                  }}
+                  className="btn-ink text-sm disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Save explanation
+                </button>
+              </div>
             </div>
             {text.trim().length < 20 && (
               <p className="mt-2 text-xs text-muted">Write at least 20 characters.</p>
@@ -104,8 +145,8 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
           {done ? "✓ Completed (undo)" : "Mark lesson complete"}
         </button>
         <p className="text-sm text-muted">
-          Completing a lesson tracks your place. Mastery comes from evidence above, not from this
-          button.
+          Completing a lesson tracks your reading place only. Mastery requires verified evidence,
+          never completion checkboxes.
         </p>
       </div>
 
@@ -135,7 +176,7 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
             className="rounded-lg border border-accent-dim p-4 text-right hover:bg-surface"
           >
             <span className="font-label text-xs text-accent">End of path →</span>
-            <span className="mt-1 block text-text">Prove it in a practice lab</span>
+            <span className="mt-1 block text-text">Prove it in a rubric-evaluated lab</span>
           </Link>
         )}
       </div>

@@ -31,15 +31,10 @@ function enrichMarkdownCitations(body: string): string {
           return sMatches.map((sid: string) => `[${sid}](cite:${sid})`).join(" ");
         }
 
-        // Check single alias or standard
+        // Check verified alias table only (never fabricate unmapped standard links)
         if (CITATION_ALIASES[trimmed]) {
           const canonical = CITATION_ALIASES[trimmed];
           return `[${trimmed}](cite:${canonical})`;
-        }
-
-        // Check if it starts with known standard prefix
-        if (/^(NASA|ISO|IEC|MIL-STD|SysML)/i.test(trimmed)) {
-          return `[${trimmed}](cite:${trimmed})`;
         }
 
         return match;
@@ -53,6 +48,14 @@ function CitationPill({ sourceId, label }: { sourceId: string; label: string }) 
   const enriched = getEnrichedSource(canonicalId);
   const href = `/sources#${canonicalId}`;
   const displayLabel = label.startsWith("[") && label.endsWith("]") ? label : `[${label}]`;
+
+  if (!enriched) {
+    return (
+      <span className="mx-0.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-muted">
+        {displayLabel}
+      </span>
+    );
+  }
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -70,21 +73,26 @@ function CitationPill({ sourceId, label }: { sourceId: string; label: string }) 
           align="center"
           className="max-w-xs p-3 text-left bg-surface border border-line text-text shadow-xl rounded-xl z-50"
         >
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1">
             <span className="rounded-full bg-ink px-2 py-0.5 text-[10px] font-semibold text-bg">
               {canonicalId}
             </span>
-            {enriched?.source_type && (
-              <span className="text-[11px] font-medium text-muted">{enriched.source_type}</span>
-            )}
+            <span className="text-[10px] font-medium text-muted capitalize">
+              {enriched.authority_tier.replace(/-/g, " ")}
+            </span>
+            <span className="text-[10px] font-medium text-accent capitalize">
+              · {enriched.provenance_status.replace(/-/g, " ")}
+            </span>
           </div>
-          <p className="font-semibold text-xs leading-snug text-text">{enriched?.title || label}</p>
-          {enriched?.relevance && (
+          <p className="font-semibold text-xs leading-snug text-text">{enriched.title}</p>
+          {enriched.relevance && (
             <p className="mt-1 text-[11px] leading-tight text-muted line-clamp-2">
               {enriched.relevance}
             </p>
           )}
-          <p className="mt-2 text-[10px] font-medium text-accent">Jump to Source Register →</p>
+          <p className="mt-2 text-[10px] font-medium text-accent">
+            Inspect in Source Register (as of {enriched.freshness_as_of}) →
+          </p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

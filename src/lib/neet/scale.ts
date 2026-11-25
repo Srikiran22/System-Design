@@ -1,18 +1,63 @@
 import { LABS, PATHS, SKILLS, allLessons, lessonHref, lessonKey } from "./content";
-import type { Discipline, Evidence, Level, SkillProgress } from "./types";
+import { COMPETENCIES, inferCompetenciesFromText } from "./competencies";
+import type {
+  Discipline,
+  Evidence,
+  FreshnessStatus,
+  Level,
+  SkillProgress,
+  VerificationTier,
+} from "./types";
 
-const HALF_LIFE_DAYS = 45;
-const TARGET_WEIGHT = 6;
+export const SCALE_MODEL_VERSION = "2.0.0";
+export const HALF_LIFE_DAYS = 45;
+export const TARGET_WEIGHT = 6;
 const DAY = 86_400_000;
 
 export const decay = (days: number) => Math.pow(0.5, Math.max(0, days) / HALF_LIFE_DAYS);
 
+const TIER_RANK: Record<VerificationTier, number> = {
+  "self-assessed": 1,
+  "automated-check": 2,
+  "rubric-evaluated": 3,
+  "reviewer-verified": 4,
+};
+
+function highestTier(evidence: Evidence[]): VerificationTier | "none" {
+  if (evidence.length === 0) return "none";
+  let best: VerificationTier = "self-assessed";
+  for (const e of evidence) {
+    const tier: VerificationTier =
+      e.verificationTier ??
+      (e.type === "quiz"
+        ? "automated-check"
+        : e.type === "review"
+          ? "reviewer-verified"
+          : "self-assessed");
+    if (TIER_RANK[tier] > TIER_RANK[best]) best = tier;
+  }
+  return best;
+}
+
+function computeFreshness(lastEvidenceAt: string | undefined, now: number): FreshnessStatus {
+  if (!lastEvidenceAt) return "none";
+  const ageDays = (now - Date.parse(lastEvidenceAt)) / DAY;
+  if (Number.isNaN(ageDays) || ageDays <= 14) return "fresh";
+  if (ageDays <= 35) return "aging";
+  return "stale";
+}
+
 /**
- * v1, explainable:
- *   quality  = sum(weight * score * decay) / sum(weight)
+ * Proceed Scale v2 (explainable & versioned):
+ *   quality  = sum(weight * score * decay(age)) / sum(weight)
  *   coverage = min(1, sum(weight) / 6)
  *   mastery  = quality * coverage
- * Level 3 needs a variant or lab. Level 4 needs an artifact.
+ * Strict gates:
+ *   Level 0 = Not assessed (explicitly NOT "zero ability")
+ *   Level 1 (Search) = initial framing / retrieval evidence
+ *   Level 2 (Know) = mastery >= 0.25
+ *   Level 3 (Adapt) = mastery >= 0.55 AND qualifying variant/lab evidence (score >= 0.6)
+ *   Level 4 (Proceed) = mastery >= 0.80 AND qualifying artifact evidence (score >= 0.75)
  */
 export function computeSkill(
   skillId: string,
@@ -20,23 +65,32 @@ export function computeSkill(
   now = Date.now(),
 ): SkillProgress {
   const ev = evidence.filter((e) => e.skillId === skillId);
-  if (ev.length === 0)
+  if (ev.length === 0) {
     return {
       skillId,
       level: 0,
       mastery: 0,
+      coverage: 0,
+      quality: 0,
+      freshness: "none",
+      verificationTier: "none",
+      formulaVersion: SCALE_MODEL_VERSION,
       evidenceCount: 0,
-      gate: "Answer a pause-and-think question to start.",
+      gate: "Not yet assessed. Answer a pause-and-think check or complete a lab to establish baseline evidence.",
     };
+  }
 
   const sumW = ev.reduce((n, e) => n + e.weight, 0);
   const num = ev.reduce(
     (n, e) => n + e.weight * e.score * decay((now - Date.parse(e.at)) / DAY),
     0,
   );
-  const mastery = (num / sumW) * Math.min(1, sumW / TARGET_WEIGHT);
-  const hasApply = ev.some((e) => e.type === "variant" || e.type === "lab");
-  const hasArtifact = ev.some((e) => e.type === "artifact");
+  const quality = sumW > 0 ? num / sumW : 0;
+  const coverage = Math.min(1, sumW / TARGET_WEIGHT);
+  const mastery = quality * coverage;
+
+  const hasApply = ev.some((e) => (e.type === "variant" || e.type === "lab") && e.score >= 0.6);
+  const hasArtifact = ev.some((e) => e.type === "artifact" && e.score >= 0.75);
 
   let level: Level = 1;
   if (mastery >= 0.25) level = 2;
@@ -44,21 +98,35 @@ export function computeSkill(
   if (mastery >= 0.8 && hasArtifact) level = 4;
 
   let gate: string | undefined;
-  if (level < 3)
+  if (level < 3) {
     gate =
       mastery >= 0.55 && !hasApply
-        ? "Needs a variant or lab to reach Adapt."
-        : "Keep answering and explaining to reach Know and Adapt.";
-  else if (level < 4)
+        ? "Needs a passing lab or variant scenario (>=60% rubric/score) to reach Adapt."
+        : "Build evidence coverage with retrieval checks and structured explain-backs.";
+  } else if (level < 4) {
     gate = hasArtifact
-      ? "Raise mastery with spaced review."
-      : "Needs an artifact to reach Proceed.";
+      ? "Raise evidence coverage and recency with spaced retrieval or review."
+      : "Needs a passing artifact or capstone milestone (>=75% rubric) to reach Proceed.";
+  }
 
   const last = ev
     .map((e) => e.at)
     .sort()
     .at(-1);
-  return { skillId, level, mastery, lastEvidenceAt: last, evidenceCount: ev.length, gate };
+
+  return {
+    skillId,
+    level,
+    mastery,
+    coverage,
+    quality,
+    freshness: computeFreshness(last, now),
+    verificationTier: highestTier(ev),
+    formulaVersion: SCALE_MODEL_VERSION,
+    lastEvidenceAt: last,
+    evidenceCount: ev.length,
+    gate,
+  };
 }
 
 export function computeAll(evidence: Evidence[], now = Date.now()): SkillProgress[] {
@@ -94,16 +162,118 @@ export function calibration(evidence: Evidence[]) {
 }
 
 export interface NextStep {
-  kind: "lesson" | "lab" | "review";
+  kind: "lesson" | "lab" | "review" | "capstone";
   title: string;
   href: string;
   reason: string;
+  skillId?: string;
+}
+
+export interface SkillGapRecommendation {
+  skillId: string;
+  code: string;
+  title: string;
+  currentLevel: Level;
+  freshness: FreshnessStatus;
+  priority: "high" | "medium" | "low";
+  reason: string;
+  actionLabel: string;
+  actionHref: string;
+}
+
+/** Identifies prioritized competency gaps based on prerequisites, staleness, and learner goals. */
+export function recommendLearningPath(
+  progress: SkillProgress[],
+  completed: string[],
+  goals: string[] = [],
+  now = Date.now(),
+): SkillGapRecommendation[] {
+  const byId = new Map(progress.map((p) => [p.skillId, p]));
+  const goalSkillIds = new Set(goals.flatMap((g) => inferCompetenciesFromText(g).map((c) => c.id)));
+
+  const recs: SkillGapRecommendation[] = [];
+
+  for (const comp of COMPETENCIES) {
+    const p = byId.get(comp.id);
+    if (!p) continue;
+    const prereqsMet = comp.prerequisites.every((pid) => (byId.get(pid)?.level ?? 0) >= 1);
+    if (!prereqsMet && p.level === 0) continue;
+
+    const matchesGoal = goalSkillIds.has(comp.id);
+    const lab = LABS.find((l) => l.skillId === comp.id);
+    const lesson = allLessons().find(
+      (x) =>
+        x.lesson.skillIds.includes(comp.id) &&
+        !completed.includes(lessonKey(x.path.slug, x.lesson.slug)),
+    );
+
+    if (
+      p.freshness === "stale" ||
+      (p.level >= 1 && p.lastEvidenceAt && now - Date.parse(p.lastEvidenceAt) > 14 * DAY)
+    ) {
+      const anyLesson = allLessons().find((x) => x.lesson.skillIds.includes(comp.id));
+      recs.push({
+        skillId: comp.id,
+        code: comp.code,
+        title: comp.title,
+        currentLevel: p.level,
+        freshness: p.freshness,
+        priority: "high",
+        reason:
+          "Evidence is aging — run a retrieval check or scenario variant to verify retention.",
+        actionLabel: lab ? "Practice variant" : "Review lesson",
+        actionHref: lab
+          ? `/labs#${lab.id}`
+          : anyLesson
+            ? lessonHref(anyLesson.path.slug, anyLesson.lesson.slug)
+            : "/paths",
+      });
+      continue;
+    }
+
+    if (p.level === 2 && lab) {
+      recs.push({
+        skillId: comp.id,
+        code: comp.code,
+        title: comp.title,
+        currentLevel: p.level,
+        freshness: p.freshness,
+        priority: matchesGoal ? "high" : "medium",
+        reason: matchesGoal
+          ? `Aligned with your stated goal. Complete a rubric-evaluated lab to advance from Know to Adapt.`
+          : "Conceptual baseline reached; apply it under a constraint twist to reach Adapt.",
+        actionLabel: `Open ${lab.title}`,
+        actionHref: `/labs#${lab.id}`,
+      });
+      continue;
+    }
+
+    if (p.level < 2 && lesson) {
+      recs.push({
+        skillId: comp.id,
+        code: comp.code,
+        title: comp.title,
+        currentLevel: p.level,
+        freshness: p.freshness,
+        priority: matchesGoal ? "high" : p.level === 0 ? "medium" : "low",
+        reason: matchesGoal
+          ? `Directly supports your learning goal (${comp.code}).`
+          : `Unblocked foundation (${comp.code}) — build baseline evidence.`,
+        actionLabel: `Study ${lesson.lesson.title}`,
+        actionHref: lessonHref(lesson.path.slug, lesson.lesson.slug),
+      });
+    }
+  }
+
+  const weight = { high: 0, medium: 1, low: 2 };
+  return recs.sort((a, b) => weight[a.priority] - weight[b.priority]).slice(0, 5);
 }
 
 export function nextBestStep(
   progress: SkillProgress[],
   completed: string[],
   now = Date.now(),
+  goals: string[] = [],
 ): NextStep {
   const byId = new Map(progress.map((p) => [p.skillId, p]));
 
@@ -122,14 +292,22 @@ export function nextBestStep(
         title: `Review: ${skill.title}`,
         href: lessonHref(l.path.slug, l.lesson.slug),
         reason:
-          "Mastery decays without retrieval. This one has not been touched in over two weeks.",
+          "Evidence decays without retrieval. This competency has not been exercised in over two weeks.",
+        skillId: stale.skillId,
       };
   }
 
-  // 2. Lowest level among skills whose prerequisites are reached.
+  // 2. Goal-aligned unblocked skill first, then lowest level among unblocked skills.
+  const goalSkillIds = new Set(goals.flatMap((g) => inferCompetenciesFromText(g).map((c) => c.id)));
   const open = SKILLS.filter((s) =>
     s.prerequisites.every((p) => (byId.get(p)?.level ?? 0) >= 1),
-  ).sort((a, b) => (byId.get(a.id)?.level ?? 0) - (byId.get(b.id)?.level ?? 0));
+  ).sort((a, b) => {
+    const aGoal = goalSkillIds.has(a.id) ? 0 : 1;
+    const bGoal = goalSkillIds.has(b.id) ? 0 : 1;
+    if (aGoal !== bGoal) return aGoal - bGoal;
+    return (byId.get(a.id)?.level ?? 0) - (byId.get(b.id)?.level ?? 0);
+  });
+
   for (const skill of open) {
     const lvl = byId.get(skill.id)?.level ?? 0;
     const lesson = allLessons().find(
@@ -142,15 +320,19 @@ export function nextBestStep(
         kind: "lesson",
         title: lesson.lesson.title,
         href: lessonHref(lesson.path.slug, lesson.lesson.slug),
-        reason: `Builds ${skill.title}, the lowest skill you can reach right now.`,
+        reason: goalSkillIds.has(skill.id)
+          ? `Aligned with your goal — builds ${skill.title}.`
+          : `Builds ${skill.title}, the lowest unblocked competency right now.`,
+        skillId: skill.id,
       };
     const lab = LABS.find((l) => l.skillId === skill.id);
     if (lvl >= 2 && lvl < 4 && lab)
       return {
         kind: "lab",
         title: lab.title,
-        href: "/labs",
-        reason: `You know ${skill.title}. A lab shows you can adapt it.`,
+        href: `/labs#${lab.id}`,
+        reason: `You hold a conceptual model for ${skill.title}. Apply it in a rubric-evaluated lab to reach Adapt.`,
+        skillId: skill.id,
       };
     if (lesson)
       return {
@@ -158,8 +340,10 @@ export function nextBestStep(
         title: lesson.lesson.title,
         href: lessonHref(lesson.path.slug, lesson.lesson.slug),
         reason: `Next in ${skill.title}.`,
+        skillId: skill.id,
       };
   }
+
   const first = PATHS[0];
   return {
     kind: "lesson",

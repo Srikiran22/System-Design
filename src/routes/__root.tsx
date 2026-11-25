@@ -18,6 +18,7 @@ import CommandPalette from "@/components/neet/CommandPalette";
 import ProgressSync from "@/components/neet/ProgressSync";
 import { Toaster } from "@/components/ui/sonner";
 import { authClient } from "@/lib/neet/auth-client";
+import { setActiveUser } from "@/lib/neet/store";
 
 function NotFoundComponent() {
   return (
@@ -114,10 +115,16 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
   useEffect(() => {
-    const { data } = authClient.onAuthStateChange((event) => {
+    const { data } = authClient.onAuthStateChange((event, session) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      if (event === "SIGNED_OUT") {
+        setActiveUser(null);
+        queryClient.clear();
+      } else {
+        setActiveUser(session?.user?.id ?? null);
+        queryClient.invalidateQueries();
+      }
       router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });
     return () => data.subscription.unsubscribe();
   }, [router, queryClient]);

@@ -418,6 +418,41 @@ export function initTablesSync(db: DatabaseSync): void {
       summary,
       body
     );
+
+    CREATE TABLE IF NOT EXISTS local_auth_users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS learner_evidence (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      skill_id TEXT NOT NULL,
+      evidence_type TEXT NOT NULL,
+      ref TEXT NOT NULL,
+      score REAL NOT NULL,
+      weight REAL NOT NULL,
+      confidence REAL,
+      verification_tier TEXT NOT NULL DEFAULT 'self-assessed',
+      rubric_version TEXT,
+      rubric_scores_json TEXT,
+      artifact_url TEXT,
+      artifact_notes TEXT,
+      occurred_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(user_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS learner_evidence_user_skill_idx ON learner_evidence(user_id, skill_id);
+
+    CREATE TABLE IF NOT EXISTS learner_state_snapshots (
+      user_id TEXT PRIMARY KEY,
+      state_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -1056,17 +1091,302 @@ export function getSystemHealth(): SystemHealth {
   };
 }
 
+export type LocalAuthUserRow = {
+  id: string;
+  email: string;
+  password_hash: string;
+  display_name: string;
+  created_at: string;
+};
+
+export function findLocalAuthUserByEmail(email: string): LocalAuthUserRow | null {
+  const db = getDatabase();
+  const row = db
+    .prepare(
+      "SELECT id, email, password_hash, display_name, created_at FROM local_auth_users WHERE email = ?",
+    )
+    .get(email.toLowerCase()) as unknown as LocalAuthUserRow | undefined;
+  return row ?? null;
+}
+
+export function findLocalAuthUserById(id: string): LocalAuthUserRow | null {
+  const db = getDatabase();
+  const row = db
+    .prepare(
+      "SELECT id, email, password_hash, display_name, created_at FROM local_auth_users WHERE id = ?",
+    )
+    .get(id) as unknown as LocalAuthUserRow | undefined;
+  return row ?? null;
+}
+
+export function createLocalAuthUser(input: {
+  id: string;
+  email: string;
+  passwordHash: string;
+  displayName: string;
+  createdAt: string;
+}): void {
+  const db = getDatabase();
+  db.prepare(
+    `
+    INSERT INTO local_auth_users (id, email, password_hash, display_name, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `,
+  ).run(
+    input.id,
+    input.email.toLowerCase(),
+    input.passwordHash,
+    input.displayName,
+    input.createdAt,
+  );
+}
+
+export function updateLocalAuthPassword(userId: string, passwordHash: string): void {
+  const db = getDatabase();
+  db.prepare("UPDATE local_auth_users SET password_hash = ? WHERE id = ?").run(
+    passwordHash,
+    userId,
+  );
+}
+
+export type LearnerEvidenceRecord = {
+  idempotency_key: string;
+  skill_id: string;
+  evidence_type: string;
+  ref: string;
+  score: number;
+  weight: number;
+  confidence: number | null;
+  verification_tier: string;
+  rubric_version: string | null;
+  rubric_scores_json: string | null;
+  artifact_url: string | null;
+  artifact_notes: string | null;
+  occurred_at: string;
+};
+
+export function recordLearnerEvidence(
+  userId: string,
+  items: LearnerEvidenceRecord[],
+): Result<number> {
+  const db = getDatabase();
+  try {
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      INSERT INTO learner_evidence (
+        id, user_id, idempotency_key, skill_id, evidence_type, ref,
+        score, weight, confidence, verification_tier, rubric_version,
+        rubric_scores_json, artifact_url, artifact_notes, occurred_at, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, idempotency_key) DO UPDATE SET
+        score = excluded.score,
+        weight = excluded.weight,
+        confidence = excluded.confidence,
+        verification_tier = excluded.verification_tier,
+        rubric_version = excluded.rubric_version,
+        rubric_scores_json = excluded.rubric_scores_json,
+        artifact_url = excluded.artifact_url,
+        artifact_notes = excluded.artifact_notes,
+        occurred_at = excluded.occurred_at
+    `);
+    db.exec("BEGIN TRANSACTION;");
+    for (const item of items) {
+      stmt.run(
+        crypto.randomUUID(),
+        userId,
+        item.idempotency_key,
+        item.skill_id,
+        item.evidence_type,
+        item.ref,
+        item.score,
+        item.weight,
+        item.confidence,
+        item.verification_tier,
+        item.rubric_version,
+        item.rubric_scores_json,
+        item.artifact_url,
+        item.artifact_notes,
+        item.occurred_at,
+        now,
+      );
+    }
+    db.exec("COMMIT;");
+    return ok(items.length);
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK;");
+    } catch {
+      // ignore
+    }
+    return fail((e as Error).message || "Couldn't store learning evidence.");
+  }
+}
+
+export function listLearnerEvidence(userId: string): LearnerEvidenceRecord[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `
+      SELECT idempotency_key, skill_id, evidence_type, ref, score, weight, confidence,
+             verification_tier, rubric_version, rubric_scores_json, artifact_url,
+             artifact_notes, occurred_at
+      FROM learner_evidence
+      WHERE user_id = ?
+      ORDER BY occurred_at ASC
+      LIMIT 5000
+    `,
+    )
+    .all(userId) as unknown as LearnerEvidenceRecord[];
+}
+
+export function saveLearnerSnapshot(userId: string, stateJson: string): Result<true> {
+  const db = getDatabase();
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `
+      INSERT INTO learner_state_snapshots (user_id, state_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        state_json = excluded.state_json,
+        updated_at = excluded.updated_at
+    `,
+    ).run(userId, stateJson, now);
+    return ok(true);
+  } catch (e) {
+    return fail((e as Error).message || "Couldn't persist learner snapshot.");
+  }
+}
+
+export function getLearnerSnapshot(
+  userId: string,
+): { stateJson: string; updatedAt: string } | null {
+  const db = getDatabase();
+  const row = db
+    .prepare("SELECT state_json, updated_at FROM learner_state_snapshots WHERE user_id = ?")
+    .get(userId) as unknown as { state_json: string; updated_at: string } | undefined;
+  return row ? { stateJson: row.state_json, updatedAt: row.updated_at } : null;
+}
+
+export type SourceExtractionBreakdown = {
+  totalRegistered: number;
+  auditedCount: number;
+  fullExtraction: number;
+  targetedExtraction: number;
+  partialExtraction: number;
+  discoveryOnly: number;
+  inaccessible: number;
+  unverifiedRegistry: number;
+};
+
+export function getSourceExtractionBreakdown(): SourceExtractionBreakdown {
+  const db = getDatabase();
+  const totalRegistered = (db.prepare("SELECT COUNT(*) as c FROM sources").get() as { c: number })
+    .c;
+  const audits = db
+    .prepare("SELECT canonical_source_id, status FROM scrape_audit")
+    .all() as unknown as { canonical_source_id: string | null; status: string | null }[];
+
+  const bySource = new Map<string, string>();
+  for (const a of audits) {
+    if (a.canonical_source_id) {
+      bySource.set(a.canonical_source_id, (a.status ?? "").toLowerCase());
+    }
+  }
+
+  let fullExtraction = 0;
+  let targetedExtraction = 0;
+  let partialExtraction = 0;
+  let discoveryOnly = 0;
+  let inaccessible = 0;
+
+  for (const status of bySource.values()) {
+    if (status.includes("full")) fullExtraction++;
+    else if (status.includes("targeted")) targetedExtraction++;
+    else if (status.includes("partial")) partialExtraction++;
+    else if (status.includes("discovery")) discoveryOnly++;
+    else inaccessible++;
+  }
+
+  const auditedCount = bySource.size;
+  const unverifiedRegistry = Math.max(0, totalRegistered - auditedCount);
+
+  return {
+    totalRegistered,
+    auditedCount,
+    fullExtraction,
+    targetedExtraction,
+    partialExtraction,
+    discoveryOnly,
+    inaccessible,
+    unverifiedRegistry,
+  };
+}
+
+export type PublicHealthStatus = {
+  status: "healthy" | "degraded";
+  timestamp: string;
+  version: string;
+  storageMode: "supabase" | "local_sqlite_dev";
+  knowledgePack: {
+    volumes: number;
+    sources: SourceExtractionBreakdown;
+    practicePrompts: number;
+    careerRoles: number;
+    deepCoverageDomains: number;
+    researchCoverageDomains: number;
+  };
+};
+
+/** Redacted public liveness/readiness payload — exposes zero file paths, memory internals, or user counts. */
+export function getPublicHealth(storageMode: "supabase" | "local_sqlite_dev"): PublicHealthStatus {
+  const db = getDatabase();
+  const volumes = (db.prepare("SELECT COUNT(*) as c FROM articles").get() as { c: number }).c;
+  const practicePrompts = (
+    db.prepare("SELECT COUNT(*) as c FROM practice_prompts").get() as { c: number }
+  ).c;
+  const careerRoles = (db.prepare("SELECT COUNT(*) as c FROM roles").get() as { c: number }).c;
+  const deepCoverageDomains = (
+    db.prepare("SELECT COUNT(*) as c FROM coverage_deep").get() as { c: number }
+  ).c;
+  const researchCoverageDomains = (
+    db.prepare("SELECT COUNT(*) as c FROM coverage_research").get() as { c: number }
+  ).c;
+  const sources = getSourceExtractionBreakdown();
+
+  return {
+    status: volumes >= 119 && sources.totalRegistered >= 320 ? "healthy" : "degraded",
+    timestamp: new Date().toISOString(),
+    version: "2.0.0",
+    storageMode,
+    knowledgePack: {
+      volumes,
+      sources,
+      practicePrompts,
+      careerRoles,
+      deepCoverageDomains,
+      researchCoverageDomains,
+    },
+  };
+}
+
 export type LearnerDossier = {
   exportDate: string;
+  dossierVersion: string;
+  disclaimer: string;
   userId: string;
   profile: UserProfile | null;
   goals: { id: string; text: string; created_at: string }[];
   events: { kind: string; ref: string; discipline: string | null; occurred_on: string }[];
+  evidence: LearnerEvidenceRecord[];
   metrics: {
     totalEvents: number;
+    totalEvidenceItems: number;
     distinctDisciplines: string[];
     lessonsDone: number;
     labsDone: number;
+    rubricEvaluatedCount: number;
   };
 };
 
@@ -1088,24 +1408,35 @@ export function exportLearnerDossier(userId: string): LearnerDossier {
       "SELECT kind, ref, discipline, occurred_on FROM progress_events WHERE user_id = ? ORDER BY occurred_on",
     )
     .all(userId) as { kind: string; ref: string; discipline: string | null; occurred_on: string }[];
+  const evidence = listLearnerEvidence(userId);
 
   const disciplines = Array.from(
     new Set(events.map((e) => e.discipline).filter(Boolean)),
   ) as string[];
   const lessonsDone = events.filter((e) => e.kind === "lesson").length;
   const labsDone = events.filter((e) => e.kind === "lab").length;
+  const rubricEvaluatedCount = evidence.filter(
+    (e) =>
+      e.verification_tier === "rubric-evaluated" || e.verification_tier === "reviewer-verified",
+  ).length;
 
   return {
     exportDate: new Date().toISOString(),
+    dossierVersion: "2.0.0",
+    disclaimer:
+      "Self-directed engineering learning portfolio. Records learner artifacts, rubric evaluations, and study evidence; not a formal INCOSE, ISO, NASA, or regulatory certification.",
     userId,
     profile,
     goals,
     events,
+    evidence,
     metrics: {
       totalEvents: events.length,
+      totalEvidenceItems: evidence.length,
       distinctDisciplines: disciplines,
       lessonsDone,
       labsDone,
+      rubricEvaluatedCount,
     },
   };
 }
@@ -1131,6 +1462,16 @@ export const localDb = {
   removeGoal,
   recordEvents,
   saveProgress,
+  recordLearnerEvidence,
+  listLearnerEvidence,
+  saveLearnerSnapshot,
+  getLearnerSnapshot,
+  findLocalAuthUserByEmail,
+  findLocalAuthUserById,
+  createLocalAuthUser,
+  updateLocalAuthPassword,
+  getSourceExtractionBreakdown,
+  getPublicHealth,
   getSystemHealth,
   exportLearnerDossier,
 };

@@ -1,25 +1,28 @@
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-
-const LOCAL_SESSION_KEY = "neet.local.session.v1";
-const LOCAL_USERS_KEY = "neet.local.users.v1";
-
-interface LocalStoredUser {
-  id: string;
-  email: string;
-  password: string;
-  displayName: string;
-  createdAt: string;
-}
-
-interface LocalStoredSession {
-  user: User;
-  access_token: string;
-}
+import {
+  localGetSession,
+  localSignIn,
+  localSignOut,
+  localSignUp,
+  localUpdatePassword,
+  type LocalAuthSessionPayload,
+} from "./local-auth.functions";
 
 type AuthListener = (event: AuthChangeEvent, session: Session | null) => void;
 
 const localListeners = new Set<AuthListener>();
+
+// In-memory session cache ONLY — zero credentials or tokens ever stored in localStorage/sessionStorage.
+let memorySession: Session | null = null;
+let hydratedFromServer = false;
+let hydratingPromise: Promise<Session | null> | null = null;
+let isHydratingDevSession = false;
+
+/** Synchronously returns the currently hydrated in-memory access token without triggering RPCs. */
+export function getInMemoryAccessToken(): string | null {
+  return memorySession?.access_token ?? null;
+}
 
 /** True when Supabase client environment variables are configured. */
 export function isSupabaseClientConfigured(): boolean {
@@ -32,93 +35,30 @@ export function isSupabaseClientConfigured(): boolean {
   return Boolean(url && key && String(url).trim().length > 0 && String(key).trim().length > 0);
 }
 
-function deterministicUuid(seedText: string): string {
-  // Simple FNV-1a based deterministic UUID v4-shaped identifier for local accounts
-  let h1 = 0x811c9dc5;
-  let h2 = 0x9e3779b9;
-  for (let i = 0; i < seedText.length; i++) {
-    const ch = seedText.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 0x01000193) >>> 0;
-    h2 = Math.imul(h2 ^ (ch + i), 0x85ebca6b) >>> 0;
-  }
-  const hex = (n: number) => n.toString(16).padStart(8, "0");
-  const p1 = hex(h1);
-  const p2 = hex(h2);
-  const p3 = hex((h1 ^ 0x5bd1e995) >>> 0);
-  const p4 = hex((h2 ^ 0x27d4eb2d) >>> 0);
-  return `${p1}-${p2.slice(0, 4)}-4${p2.slice(5, 8)}-a${p3.slice(1, 4)}-${p3.slice(4)}${p4.slice(0, 8)}`;
+/** Local dev auth is strictly limited to non-production dev/test builds when Supabase is unconfigured. */
+export function isLocalDevClientMode(): boolean {
+  if (isSupabaseClientConfigured()) return false;
+  return Boolean(import.meta.env.DEV || import.meta.env.MODE === "test");
 }
 
-function makeLocalToken(userId: string, email: string): string {
-  const toBase64 = (obj: unknown) => {
-    const json = JSON.stringify(obj);
-    if (typeof btoa === "function") {
-      return btoa(unescape(encodeURIComponent(json)));
-    }
-    return Buffer.from(json, "utf-8").toString("base64");
-  };
-  return `${toBase64({ alg: "none", typ: "JWT" })}.${toBase64({ sub: userId, email })}.local`;
-}
-
-function readLocalUsers(): Record<string, LocalStoredUser> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(LOCAL_USERS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, LocalStoredUser>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeLocalUsers(users: Record<string, LocalStoredUser>) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function readLocalSession(): LocalStoredSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(LOCAL_SESSION_KEY);
-    return raw ? (JSON.parse(raw) as LocalStoredSession) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalSession(session: LocalStoredSession | null) {
-  if (typeof window === "undefined") return;
-  try {
-    if (session) window.localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
-    else window.localStorage.removeItem(LOCAL_SESSION_KEY);
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function toSupabaseSession(local: LocalStoredSession | null): Session | null {
-  if (!local) return null;
-  return {
-    access_token: local.access_token,
-    refresh_token: "local-refresh-token",
-    expires_in: 60 * 60 * 24 * 365,
-    token_type: "bearer",
-    user: local.user,
-  };
-}
-
-function buildLocalUser(stored: LocalStoredUser): User {
-  return {
-    id: stored.id,
-    app_metadata: { provider: "local" },
-    user_metadata: { display_name: stored.displayName },
+function toSession(payload: LocalAuthSessionPayload | null): Session | null {
+  if (!payload) return null;
+  const user: User = {
+    id: payload.user.id,
+    app_metadata: { provider: "local_dev" },
+    user_metadata: { display_name: payload.user.display_name },
     aud: "authenticated",
-    created_at: stored.createdAt,
-    email: stored.email,
+    created_at: payload.user.created_at,
+    email: payload.user.email,
   } as User;
+
+  return {
+    access_token: payload.access_token,
+    refresh_token: "",
+    expires_in: 60 * 60 * 24 * 7,
+    token_type: "bearer",
+    user,
+  };
 }
 
 function notifyLocalListeners(event: AuthChangeEvent, session: Session | null) {
@@ -131,9 +71,41 @@ function notifyLocalListeners(event: AuthChangeEvent, session: Session | null) {
   });
 }
 
+async function ensureHydratedDevSession(): Promise<Session | null> {
+  if (typeof window === "undefined") return null;
+  if (hydratedFromServer) return memorySession;
+  if (isHydratingDevSession) return hydratingPromise ?? memorySession;
+  isHydratingDevSession = true;
+  hydratingPromise = Promise.resolve()
+    .then(() => localGetSession())
+    .then((res) => {
+      memorySession = toSession(res.data);
+      hydratedFromServer = true;
+      return memorySession;
+    })
+    .catch(() => {
+      memorySession = null;
+      hydratedFromServer = true;
+      return null;
+    })
+    .finally(() => {
+      isHydratingDevSession = false;
+      hydratingPromise = null;
+    });
+  return hydratingPromise;
+}
+
+const PROD_UNCONFIGURED_ERR = {
+  code: "auth_unconfigured",
+  message: "Authentication service is not configured for this deployment.",
+};
+
 /**
- * Resilient auth client: uses Supabase Auth when configured, and falls back to
- * a local browser session (paired with local SQLite on the server) otherwise.
+ * Auth client wrapper:
+ * - Uses Supabase Auth whenever configured (production & cloud dev).
+ * - In local non-production dev without Supabase, delegates to server-side scrypt + HS256
+ *   HttpOnly session endpoints while holding the active session strictly in JS memory.
+ * - Fails closed in production when Supabase is unconfigured.
  */
 export const authClient = {
   async getSession(): Promise<{ data: { session: Session | null }; error: null }> {
@@ -141,7 +113,11 @@ export const authClient = {
       const res = await supabase.auth.getSession();
       return { data: { session: res.data.session }, error: null };
     }
-    return { data: { session: toSupabaseSession(readLocalSession()) }, error: null };
+    if (!isLocalDevClientMode()) {
+      return { data: { session: null }, error: null };
+    }
+    const session = await ensureHydratedDevSession();
+    return { data: { session }, error: null };
   },
 
   async getUser(): Promise<{ data: { user: User | null }; error: null }> {
@@ -149,7 +125,11 @@ export const authClient = {
       const res = await supabase.auth.getUser();
       return { data: { user: res.data.user }, error: null };
     }
-    return { data: { user: readLocalSession()?.user ?? null }, error: null };
+    if (!isLocalDevClientMode()) {
+      return { data: { user: null }, error: null };
+    }
+    const session = await ensureHydratedDevSession();
+    return { data: { user: session?.user ?? null }, error: null };
   },
 
   onAuthStateChange(callback: AuthListener) {
@@ -172,29 +152,21 @@ export const authClient = {
     if (isSupabaseClientConfigured()) {
       return supabase.auth.signInWithPassword({ email, password });
     }
-    const normalized = email.trim().toLowerCase();
-    const users = readLocalUsers();
-    const existing = users[normalized];
-    if (!existing || existing.password !== password) {
+    if (!isLocalDevClientMode()) {
+      return { data: { user: null, session: null }, error: PROD_UNCONFIGURED_ERR };
+    }
+    const res = await localSignIn({ data: { email, password } });
+    if (res.error || !res.data) {
       return {
         data: { user: null, session: null },
-        error: {
-          code: "invalid_credentials",
-          message: existing
-            ? "Email or password is incorrect."
-            : "No account found for this email yet. Switch to Create account.",
-        },
+        error: res.error ?? { code: "signin_failed", message: "Sign in failed." },
       };
     }
-    const user = buildLocalUser(existing);
-    const localSession: LocalStoredSession = {
-      user,
-      access_token: makeLocalToken(user.id, normalized),
-    };
-    writeLocalSession(localSession);
-    const session = toSupabaseSession(localSession);
+    const session = toSession(res.data)!;
+    memorySession = session;
+    hydratedFromServer = true;
     notifyLocalListeners("SIGNED_IN", session);
-    return { data: { user, session }, error: null };
+    return { data: { user: session.user, session }, error: null };
   },
 
   async signUp({
@@ -222,40 +194,36 @@ export const authClient = {
           : {}),
       });
     }
-    const normalized = email.trim().toLowerCase();
-    const users = readLocalUsers();
-    if (users[normalized]) {
+    if (!isLocalDevClientMode()) {
+      return { data: { user: null, session: null }, error: PROD_UNCONFIGURED_ERR };
+    }
+    const displayName = options?.data?.display_name?.trim();
+    const res = await localSignUp({
+      data: {
+        email,
+        password,
+        ...(displayName ? { displayName } : {}),
+      },
+    });
+    if (res.error || !res.data) {
       return {
         data: { user: null, session: null },
-        error: {
-          code: "user_already_exists",
-          message: "An account with this email already exists. Try signing in.",
-        },
+        error: res.error ?? { code: "signup_failed", message: "Account creation failed." },
       };
     }
-    const stored: LocalStoredUser = {
-      id: deterministicUuid(normalized),
-      email: normalized,
-      password,
-      displayName: options?.data?.display_name?.trim() || "",
-      createdAt: new Date().toISOString(),
-    };
-    users[normalized] = stored;
-    writeLocalUsers(users);
-    const user = buildLocalUser(stored);
-    const localSession: LocalStoredSession = {
-      user,
-      access_token: makeLocalToken(user.id, normalized),
-    };
-    writeLocalSession(localSession);
-    const session = toSupabaseSession(localSession);
+    const session = toSession(res.data)!;
+    memorySession = session;
+    hydratedFromServer = true;
     notifyLocalListeners("SIGNED_IN", session);
-    return { data: { user, session }, error: null };
+    return { data: { user: session.user, session }, error: null };
   },
 
   async resetPasswordForEmail(email: string, options?: { redirectTo?: string }) {
     if (isSupabaseClientConfigured()) {
       return supabase.auth.resetPasswordForEmail(email, options);
+    }
+    if (!isLocalDevClientMode()) {
+      return { data: {}, error: PROD_UNCONFIGURED_ERR };
     }
     return { data: {}, error: null };
   },
@@ -264,25 +232,26 @@ export const authClient = {
     if (isSupabaseClientConfigured()) {
       return supabase.auth.updateUser({ password });
     }
-    const current = readLocalSession();
-    if (!current?.user.email) {
-      return { data: { user: null }, error: { message: "Sign in first to update your password." } };
+    if (!isLocalDevClientMode()) {
+      return { data: { user: null }, error: PROD_UNCONFIGURED_ERR };
     }
-    const users = readLocalUsers();
-    const stored = users[current.user.email];
-    if (stored) {
-      stored.password = password;
-      writeLocalUsers(users);
+    const res = await localUpdatePassword({ data: { password } });
+    if (res.error) {
+      return { data: { user: null }, error: res.error };
     }
-    notifyLocalListeners("USER_UPDATED", toSupabaseSession(current));
-    return { data: { user: current.user }, error: null };
+    notifyLocalListeners("USER_UPDATED", memorySession);
+    return { data: { user: memorySession?.user ?? null }, error: null };
   },
 
   async signOut() {
     if (isSupabaseClientConfigured()) {
       return supabase.auth.signOut();
     }
-    writeLocalSession(null);
+    memorySession = null;
+    hydratedFromServer = true;
+    if (isLocalDevClientMode()) {
+      await localSignOut().catch(() => {});
+    }
     notifyLocalListeners("SIGNED_OUT", null);
     return { error: null };
   },

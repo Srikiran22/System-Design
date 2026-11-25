@@ -1,0 +1,138 @@
+path,category,loc,imports,exports
+drizzle/migrations/0000_migration.sql,Infrastructure / utility,33,,
+drizzle/migrations/0001_accounts_progress.sql,Infrastructure / utility,66,,
+drizzle/schema.ts,Infrastructure / utility,161,drizzle-orm/pg-core | drizzle-orm,articles | sources | practicePrompts | roles | coverageDeep | coverageResearch | scrapeAudit | packMeta | profiles | learningGoals | progressEvents | Article | NewArticle | Source | NewSource | PracticePrompt | NewPracticePrompt | Role | NewRole | CoverageDeep | NewCoverageDeep | CoverageResearch | NewCoverageResearch | ScrapeAudit | NewScrapeAudit | PackMeta | NewPackMeta | Profile | NewProfile | LearningGoal | NewLearningGoal | ProgressEvent | NewProgressEvent
+scripts/content_parse.py,Infrastructure / utility,27,,
+scripts/generate_source_enrichment.js,Infrastructure / utility,453,fs | path,EnrichedSourceAudit | EnrichedSourceArticleRef | EnrichedSource | ENRICHED_SOURCES | ALL_ENRICHED_SOURCES | ARTICLE_TO_SOURCES | CITATION_ALIASES | getEnrichedSource | getSourcesForArticle
+scripts/load-content.py,Infrastructure / utility,17,,
+scripts/seed-sqlite.ts,Infrastructure / utility,46,../src/lib/neet/db.server.ts,
+src/components/neet/AppLink.tsx,Product UI,18,@tanstack/react-router | react,splitHref | AppLink
+src/components/neet/Breadcrumbs.tsx,Product UI,24,@/components/neet/AppLink,Breadcrumbs
+src/components/neet/CalibrationView.tsx,Product UI,112,@/components/neet/AppLink | @/lib/neet/scale | @/lib/neet/store,CalibrationView
+src/components/neet/Callout.tsx,Product UI,19,,Callout
+src/components/neet/CommandPalette.tsx,Product UI,185,@tanstack/react-router | ./AppLink | react | @/lib/neet/content,CommandPalette
+src/components/neet/Dashboard.tsx,Product UI,238,react | @/components/neet/AppLink | @/lib/neet/content | @/lib/neet/derive | @/lib/neet/scale | @/lib/neet/store | ./ProgressBar | ./SkillMap | ./SkillRadar,Dashboard
+src/components/neet/Footer.tsx,Product UI,88,@/components/neet/AppLink | ./Motto,Footer
+src/components/neet/LabCard.tsx,Product UI,103,react | @/lib/neet/content | @/lib/neet/store | @/lib/neet/types,LabCard
+src/components/neet/LessonActions.tsx,Product UI,144,@/components/neet/AppLink | react | @/lib/neet/content | @/lib/neet/store,SaveButton | LessonActions
+src/components/neet/LessonBlocks.tsx,Product UI,97,@/lib/neet/types | ./Callout | ./PauseAndThink,slugify | LessonBlocks
+src/components/neet/LessonSidebar.tsx,Product UI,58,@/components/neet/AppLink | @/lib/neet/content | @/lib/neet/derive | @/lib/neet/store | @/lib/neet/types | ./ProgressBar,LessonSidebar
+src/components/neet/Markdown.tsx,Product UI,207,react | react-markdown | remark-gfm | ./AppLink | ./LessonBlocks | @/components/ui/tooltip | @/lib/neet/sourceEnrichment,Markdown
+src/components/neet/Motto.tsx,Product UI,23,,Motto
+src/components/neet/Nav.tsx,Product UI,131,@/components/neet/AppLink | @tanstack/react-router | react | ./TextSizeToggle | ./ProfileCard | @/hooks/use-session,Nav
+src/components/neet/PathCard.tsx,Product UI,40,@/components/neet/AppLink | @/lib/neet/content | @/lib/neet/derive | @/lib/neet/store | @/lib/neet/types | ./ProgressBar | ./fx,PathCard
+src/components/neet/PauseAndThink.tsx,Product UI,115,react | @/lib/neet/store | @/lib/neet/types,PauseAndThink
+src/components/neet/ProfileCard.tsx,Product UI,169,react | @tanstack/react-router | @tanstack/react-query | @tanstack/react-start | sonner | @/components/ui/popover | @/lib/neet/auth-client | @/hooks/use-me | @/lib/neet/account.functions | @/lib/neet/progress-math | ./fx | ./ascii | ./ProgressHeatmap | ./AppLink,ProfileMenu
+src/components/neet/ProgressBar.tsx,Product UI,28,,ProgressBar
+src/components/neet/ProgressHeatmap.tsx,Product UI,120,react | @/lib/neet/progress-math,HeatEvent | ProgressHeatmap
+src/components/neet/ProgressSync.tsx,Product UI,94,react | @tanstack/react-query | @tanstack/react-start | @/lib/neet/account.functions | @/hooks/use-session | @/lib/neet/store | @/lib/neet/progress-math | @/lib/neet/content,ProgressSync
+src/components/neet/RoadmapAccordion.tsx,Product UI,88,@/components/neet/AppLink | react | @/lib/neet/content | @/lib/neet/store | @/lib/neet/types,RoadmapAccordion
+src/components/neet/SignatureGate.tsx,Product UI,140,react | @tanstack/react-query | @tanstack/react-start | sonner | @/components/ui/dialog | @/hooks/use-me | @/lib/neet/account.functions | @/lib/neet/progress-math | ./ascii,SignatureGate
+src/components/neet/SkillMap.tsx,Product UI,56,@/lib/neet/content | @/lib/neet/scale | @/lib/neet/store | @/lib/neet/types | ./StageRing,SkillMap
+src/components/neet/SkillRadar.tsx,Product UI,70,@/lib/neet/content | @/lib/neet/types,SkillRadar
+src/components/neet/StageRing.tsx,Product UI,59,@/lib/neet/types,StageRing
+src/components/neet/StartButton.tsx,Product UI,28,@/components/neet/AppLink | @/lib/neet/content | @/lib/neet/derive | @/lib/neet/store | @/lib/neet/types,StartButton | PathProgressSummary
+src/components/neet/TextSizeToggle.tsx,Product UI,58,react,TextSizeToggle
+src/components/neet/ascii.tsx,Product UI,293,react | @/lib/neet/progress-math,AsciiParticles | AsciiSignature
+src/components/neet/fx.tsx,Product UI,62,react,BlurText | SpotlightCard
+src/components/neet/ui.tsx,Product UI,101,react,PageHeader | SearchField | Chip | Field | Empty | LoadError
+src/components/ui/accordion.tsx,UI primitive,51,react | @radix-ui/react-accordion | lucide-react | @/lib/utils,
+src/components/ui/alert-dialog.tsx,UI primitive,115,react | @radix-ui/react-alert-dialog | @/lib/utils | @/components/ui/button,
+src/components/ui/alert.tsx,UI primitive,49,react | class-variance-authority | @/lib/utils,
+src/components/ui/aspect-ratio.tsx,UI primitive,5,@radix-ui/react-aspect-ratio,
+src/components/ui/avatar.tsx,UI primitive,47,react | @radix-ui/react-avatar | @/lib/utils,
+src/components/ui/badge.tsx,UI primitive,32,react | class-variance-authority | @/lib/utils,BadgeProps
+src/components/ui/breadcrumb.tsx,UI primitive,101,react | @radix-ui/react-slot | lucide-react | @/lib/utils,
+src/components/ui/button.tsx,UI primitive,49,react | @radix-ui/react-slot | class-variance-authority | @/lib/utils,ButtonProps
+src/components/ui/calendar.tsx,UI primitive,177,react | lucide-react | react-day-picker | @/lib/utils | @/components/ui/button,
+src/components/ui/card.tsx,UI primitive,55,react | @/lib/utils,
+src/components/ui/carousel.tsx,UI primitive,240,react | embla-carousel-react | lucide-react | @/lib/utils | @/components/ui/button,
+src/components/ui/chart.tsx,UI primitive,331,react | recharts | @/lib/utils,ChartConfig
+src/components/ui/checkbox.tsx,UI primitive,26,react | @radix-ui/react-checkbox | lucide-react | @/lib/utils,
+src/components/ui/collapsible.tsx,UI primitive,11,@radix-ui/react-collapsible,
+src/components/ui/command.tsx,UI primitive,143,react | @radix-ui/react-dialog | cmdk | lucide-react | @/lib/utils | @/components/ui/dialog,
+src/components/ui/context-menu.tsx,UI primitive,186,react | @radix-ui/react-context-menu | lucide-react | @/lib/utils,
+src/components/ui/dialog.tsx,UI primitive,104,react | @radix-ui/react-dialog | lucide-react | @/lib/utils,
+src/components/ui/drawer.tsx,UI primitive,98,react | vaul | @/lib/utils,
+src/components/ui/dropdown-menu.tsx,UI primitive,187,react | @radix-ui/react-dropdown-menu | lucide-react | @/lib/utils,
+src/components/ui/form.tsx,UI primitive,171,react | @radix-ui/react-label | @radix-ui/react-slot | react-hook-form | @/lib/utils | @/components/ui/label,
+src/components/ui/hover-card.tsx,UI primitive,27,react | @radix-ui/react-hover-card | @/lib/utils,
+src/components/ui/input-otp.tsx,UI primitive,73,react | input-otp | lucide-react | @/lib/utils,
+src/components/ui/input.tsx,UI primitive,22,react | @/lib/utils,
+src/components/ui/label.tsx,UI primitive,21,react | @radix-ui/react-label | class-variance-authority | @/lib/utils,
+src/components/ui/menubar.tsx,UI primitive,228,react | @radix-ui/react-menubar | lucide-react | @/lib/utils,
+src/components/ui/navigation-menu.tsx,UI primitive,120,react | @radix-ui/react-navigation-menu | class-variance-authority | lucide-react | @/lib/utils,
+src/components/ui/pagination.tsx,UI primitive,98,react | lucide-react | @/lib/utils | @/components/ui/button,
+src/components/ui/popover.tsx,UI primitive,31,react | @radix-ui/react-popover | @/lib/utils,
+src/components/ui/progress.tsx,UI primitive,25,react | @radix-ui/react-progress | @/lib/utils,
+src/components/ui/radio-group.tsx,UI primitive,36,react | @radix-ui/react-radio-group | lucide-react | @/lib/utils,
+src/components/ui/resizable.tsx,UI primitive,37,lucide-react | react-resizable-panels | @/lib/utils,
+src/components/ui/scroll-area.tsx,UI primitive,44,react | @radix-ui/react-scroll-area | @/lib/utils,
+src/components/ui/select.tsx,UI primitive,152,react | @radix-ui/react-select | lucide-react | @/lib/utils,
+src/components/ui/separator.tsx,UI primitive,24,react | @radix-ui/react-separator | @/lib/utils,
+src/components/ui/sheet.tsx,UI primitive,122,react | @radix-ui/react-dialog | class-variance-authority | lucide-react | @/lib/utils,
+src/components/ui/sidebar.tsx,UI primitive,744,react | @radix-ui/react-slot | class-variance-authority | lucide-react | @/hooks/use-mobile | @/lib/utils | @/components/ui/button | @/components/ui/input | @/components/ui/separator | @/components/ui/sheet | @/components/ui/skeleton | @/components/ui/tooltip,
+src/components/ui/skeleton.tsx,UI primitive,7,@/lib/utils,
+src/components/ui/slider.tsx,UI primitive,23,react | @radix-ui/react-slider | @/lib/utils,
+src/components/ui/sonner.tsx,UI primitive,23,sonner,
+src/components/ui/switch.tsx,UI primitive,27,react | @radix-ui/react-switch | @/lib/utils,
+src/components/ui/table.tsx,UI primitive,94,react | @/lib/utils,
+src/components/ui/tabs.tsx,UI primitive,53,react | @radix-ui/react-tabs | @/lib/utils,
+src/components/ui/textarea.tsx,UI primitive,21,react | @/lib/utils,
+src/components/ui/toggle-group.tsx,UI primitive,57,react | @radix-ui/react-toggle-group | class-variance-authority | @/lib/utils | @/components/ui/toggle,
+src/components/ui/toggle.tsx,UI primitive,42,react | @radix-ui/react-toggle | class-variance-authority | @/lib/utils,
+src/components/ui/tooltip.tsx,UI primitive,32,react | @radix-ui/react-tooltip | @/lib/utils,
+src/hooks/use-me.ts,Hook,26,@tanstack/react-query | @tanstack/react-start | @/lib/neet/account.functions | ./use-session,ME_KEY | useMe
+src/hooks/use-mobile.tsx,Hook,19,react,useIsMobile
+src/hooks/use-session.ts,Hook,45,react | @supabase/supabase-js | @/lib/neet/auth-client,useSession | authErrorMessage
+src/integrations/supabase/auth-attacher.ts,Integration,15,@tanstack/react-start | ./client,attachSupabaseAuth
+src/integrations/supabase/auth-middleware.ts,Integration,105,@tanstack/react-start | @tanstack/react-start/server | @supabase/supabase-js | ./types,requireSupabaseAuth
+src/integrations/supabase/client.server.ts,Integration,72,@supabase/supabase-js | ./types,supabaseAdmin
+src/integrations/supabase/client.ts,Integration,95,@supabase/supabase-js | ./types | ./previewAuthStorage,supabase
+src/integrations/supabase/cron-auth.ts,Integration,27,,authenticateCronRequest
+src/integrations/supabase/previewAuthStorage.ts,Integration,172,,PreviewAuthStorage | brokeredPreviewStorage
+src/integrations/supabase/types.ts,Integration,472,,Json | Database | Tables | TablesInsert | TablesUpdate | Enums | CompositeTypes | Constants
+src/lib/error-capture.ts,Infrastructure / utility,81,,describeError | consumeLastCapturedError
+src/lib/error-page.ts,Infrastructure / utility,30,,renderErrorPage
+src/lib/lovable-error-reporting.ts,Infrastructure / utility,70,,reportLovableError
+src/lib/neet/account.functions.ts,Domain / server library,303,@tanstack/react-start | @tanstack/react-start/server | @supabase/supabase-js | zod | @/integrations/supabase/types,Result | Me | AccountAuthContext | resilientAuth | getMe | signCommitment | addGoal | removeGoal | recordEvents | exportDossier
+src/lib/neet/auth-attacher.ts,Domain / server library,18,@tanstack/react-start | ./auth-client,attachAuth
+src/lib/neet/auth-client.ts,Domain / server library,289,@supabase/supabase-js | @/integrations/supabase/client,isSupabaseClientConfigured | authClient
+src/lib/neet/content.ts,Domain / server library,1763,./types,SITE | STAGES | DISCIPLINES | SKILLS | PATHS | LABS | lessonKey | lessonHref | flatLessons | allLessons | pathMinutes | skillById
+src/lib/neet/db.server.test.ts,Domain / server library,230,vitest | node:sqlite | node:crypto | ./db.server,
+src/lib/neet/db.server.ts,Domain / server library,1138,node:fs | node:path | node:crypto | node:sqlite,ArticleListItem | ArticleDetail | ArticleNav | SourceRecord | PracticePromptRecord | RoleRecord | CoverageDeepRecord | CoverageResearchRecord | ScrapeAuditRecord | UserProfile | UserGoal | UserEvent | MeData | ProgressEventInput | Result | parseCsv | getDatabase | initTablesSync | SeedStats | seedDatabaseSync | isSupabaseAvailable | listArticles | getArticle | searchArticles | listSources | listPrompts | listRoles | getCoverage | getMe | signCommitment | addGoal | removeGoal | recordEvents | SystemHealth | getSystemHealth | LearnerDossier | exportLearnerDossier | saveProgress | localDb
+src/lib/neet/derive.ts,Domain / server library,13,./content | ./types,pathProgress | firstOpenLesson
+src/lib/neet/library.functions.ts,Domain / server library,276,@tanstack/react-start | @supabase/supabase-js | @/integrations/supabase/types | ./db.server | ./sourceEnrichment,ArticleListItem | listArticles | searchArticles | getArticle | listSources | listPrompts | listRoles | getCoverage | getHealth
+src/lib/neet/meta.ts,Domain / server library,13,,pageHead
+src/lib/neet/progress-math.test.ts,Domain / server library,56,vitest | ./progress-math,
+src/lib/neet/progress-math.ts,Domain / server library,121,,DisciplineCode | initialsFrom | disciplineOf | isoDay | bucketByDay | level | HeatCell | heatmapGrid | streaks | mulberry32 | seedFrom
+src/lib/neet/scale.ts,Domain / server library,170,./content | ./types,decay | computeSkill | computeAll | disciplineScores | calibration | NextStep | nextBestStep
+src/lib/neet/sourceEnrichment.ts,Domain / server library,14290,,EnrichedSourceAudit | EnrichedSourceArticleRef | EnrichedSource | ENRICHED_SOURCES | ALL_ENRICHED_SOURCES | ARTICLE_TO_SOURCES | CITATION_ALIASES | getEnrichedSource | getSourcesForArticle
+src/lib/neet/store.ts,Domain / server library,263,react | ./content | ./types,State | useProgress | useHydrated | ProgressKind | ProgressSignal | emitProgress | lessonSkill | readProgressSnapshot | actions
+src/lib/neet/types.ts,Domain / server library,110,,Stage | Discipline | EvidenceType | Skill | Evidence | Level | SkillProgress | Block | Lesson | Module | Path | Lab | LearningRepo
+src/lib/utils.ts,Infrastructure / utility,6,clsx | tailwind-merge,cn
+src/routeTree.gen.ts,Infrastructure / utility,436,./routes/__root | ./routes/index | ./routes/_authenticated/route | ./routes/auth | ./routes/careers | ./routes/coverage | ./routes/exercises | ./routes/health | ./routes/labs | ./routes/method | ./routes/reset-password | ./routes/sources | ./routes/library.index | ./routes/library.$slug | ./routes/paths.index | ./routes/paths.$slug | ./routes/_authenticated/me.index | ./routes/_authenticated/me.calibration | ./routes/_authenticated/learn.$path.$lesson | ./router.tsx | ./start.ts,FileRoutesByFullPath | FileRoutesByTo | FileRoutesById | FileRouteTypes | RootRouteChildren | routeTree
+src/router.tsx,Infrastructure / utility,16,@tanstack/react-query | @tanstack/react-router | ./routeTree.gen,getRouter
+src/routes/__root.tsx,Route,144,@tanstack/react-query | @tanstack/react-router | react | ../styles.css?url | ../lib/lovable-error-reporting | @/components/neet/Nav | @/components/neet/Footer | @/components/neet/CommandPalette | @/components/neet/ProgressSync | @/components/ui/sonner | @/lib/neet/auth-client,Route
+src/routes/_authenticated/learn.$path.$lesson.tsx,Route,122,@tanstack/react-router | @/lib/neet/meta | @/components/neet/Breadcrumbs | @/components/neet/LessonActions | @/components/neet/LessonBlocks | @/components/neet/LessonSidebar | @/components/neet/SignatureGate | @/lib/neet/content,Route
+src/routes/_authenticated/me.calibration.tsx,Route,24,@tanstack/react-router | @/lib/neet/meta | @/components/neet/Breadcrumbs | @/components/neet/CalibrationView,Route
+src/routes/_authenticated/me.index.tsx,Route,85,@tanstack/react-router | @/lib/neet/meta | @/components/neet/AppLink | @/components/neet/Dashboard | @/components/neet/ProgressHeatmap | @/hooks/use-me | @/lib/neet/account.functions | react,Route
+src/routes/_authenticated/route.tsx,Route,13,@tanstack/react-router | @/lib/neet/auth-client,Route
+src/routes/auth.tsx,Route,206,@tanstack/react-router | react | zod | @/lib/neet/auth-client | @/hooks/use-session | @/lib/neet/meta,Route
+src/routes/careers.tsx,Route,61,@tanstack/react-router | react | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/routes/coverage.tsx,Route,143,@tanstack/react-router | react | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/routes/exercises.tsx,Route,70,@tanstack/react-router | react | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/routes/health.tsx,Route,132,@tanstack/react-router | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta | react,Route
+src/routes/index.tsx,Route,169,@tanstack/react-router | @/components/neet/ascii | @/components/neet/PathCard | @/components/neet/fx | @/lib/neet/content,Route
+src/routes/labs.tsx,Route,30,@tanstack/react-router | @/lib/neet/meta | @/lib/neet/content | @/components/neet/LabCard,Route
+src/routes/library.$slug.tsx,Route,204,@tanstack/react-router | @/components/neet/AppLink | @/components/neet/Breadcrumbs | @/components/neet/Markdown | @/components/neet/LessonBlocks | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/routes/library.index.tsx,Route,209,@tanstack/react-router | react | @/components/neet/AppLink | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/routes/method.tsx,Route,116,@tanstack/react-router | @/lib/neet/meta | @/components/neet/AppLink | @/components/neet/Motto | @/lib/neet/content,Route
+src/routes/paths.$slug.tsx,Route,117,@tanstack/react-router | @/lib/neet/meta | @/components/neet/Breadcrumbs | @/components/neet/RoadmapAccordion | @/components/neet/StartButton | @/lib/neet/content,Route
+src/routes/paths.index.tsx,Route,57,@tanstack/react-router | @/lib/neet/meta | @/components/neet/PathCard | @/components/neet/SkillMap | @/lib/neet/content | @/lib/neet/types,Route
+src/routes/reset-password.tsx,Route,66,@tanstack/react-router | react | @/lib/neet/auth-client | @/hooks/use-session | @/lib/neet/meta,Route
+src/routes/sources.tsx,Route,295,@tanstack/react-router | react | @/components/neet/AppLink | @/components/neet/ui | @/lib/neet/library.functions | @/lib/neet/meta,Route
+src/server.ts,Infrastructure / utility,61,./lib/error-capture | ./lib/error-page,
+src/start.ts,Infrastructure / utility,41,@tanstack/react-start | ./lib/error-page | @/lib/neet/auth-attacher,startInstance
+src/test/app-routing.test.tsx,Infrastructure / utility,17,@tanstack/react-query | @tanstack/react-router | vitest | @/routeTree.gen,
+src/test/setup.ts,Infrastructure / utility,22,@testing-library/jest-dom/vitest,

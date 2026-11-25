@@ -5,6 +5,7 @@ import Markdown from "@/components/neet/Markdown";
 import { slugify } from "@/components/neet/LessonBlocks";
 import { LoadError } from "@/components/neet/ui";
 import { getArticle } from "@/lib/neet/library.functions";
+import type { EnrichedSource } from "@/lib/neet/sourceEnrichment";
 import { pageHead } from "@/lib/neet/meta";
 
 export const Route = createFileRoute("/library/$slug")({
@@ -30,8 +31,72 @@ export const Route = createFileRoute("/library/$slug")({
   component: ArticlePage,
 });
 
+function provenanceTone(status: EnrichedSource["provenance_status"]): string {
+  switch (status) {
+    case "full-extraction":
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
+    case "targeted-extraction":
+      return "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20";
+    case "discovery-only":
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20";
+    case "partial-or-blocked":
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20";
+    default:
+      return "bg-surface-2 text-muted border-line";
+  }
+}
+
+function SourceReferenceCard({ s }: { s: EnrichedSource }) {
+  return (
+    <div className="group flex flex-col justify-between rounded-2xl border border-line bg-surface p-4 hover:border-accent/40 hover:bg-surface-2 transition-all shadow-xs">
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="rounded-full bg-ink px-2.5 py-0.5 font-mono text-[11px] font-semibold text-bg">
+              {s.source_id}
+            </span>
+            <span className="text-[11px] text-muted capitalize">
+              {s.authority_tier.replace(/-/g, " ")}
+            </span>
+          </div>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${provenanceTone(s.provenance_status)}`}
+          >
+            {s.provenance_status.replace(/-/g, " ")}
+          </span>
+        </div>
+        <h3 className="mt-2.5 font-semibold leading-snug text-text group-hover:text-accent transition-colors">
+          {s.title}
+        </h3>
+        {s.relevance && (
+          <p className="mt-1.5 text-xs text-muted line-clamp-2 leading-relaxed">{s.relevance}</p>
+        )}
+        <p className="mt-2 text-[10px] text-muted">As of {s.freshness_as_of}</p>
+      </div>
+      <div className="mt-4 flex items-center justify-between border-t border-line/60 pt-3 text-xs">
+        <Link
+          href={`/sources#${s.source_id}`}
+          className="font-medium text-accent hover:underline flex items-center gap-1"
+        >
+          Source register <span>→</span>
+        </Link>
+        {s.url && s.url_valid && (
+          <a
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-muted hover:text-text transition-colors flex items-center gap-0.5"
+          >
+            Publisher <span>↗</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ArticlePage() {
-  const { article, prev, next, fileMap, citedSources } = Route.useLoaderData();
+  const { article, prev, next, fileMap, explicitSources, relatedSources } = Route.useLoaderData();
   const headings = Array.from(article.body.matchAll(/^##\s+(.+)$/gm)).map((m) =>
     m[1]!.replace(/[*_`]/g, "").trim(),
   );
@@ -65,10 +130,17 @@ function ArticlePage() {
                   </a>
                 </li>
               ))}
-              {citedSources && citedSources.length > 0 && (
+              {explicitSources.length > 0 && (
                 <li>
                   <a href="#cited-sources" className="font-medium text-accent">
-                    Cited sources ({citedSources.length})
+                    Explicitly cited ({explicitSources.length})
+                  </a>
+                </li>
+              )}
+              {relatedSources.length > 0 && (
+                <li>
+                  <a href="#related-sources" className="text-muted hover:text-accent">
+                    Related reading ({relatedSources.length})
                   </a>
                 </li>
               )}
@@ -80,72 +152,47 @@ function ArticlePage() {
           <Markdown body={article.body} fileMap={fileMap} />
         </div>
 
-        {citedSources && citedSources.length > 0 && (
+        {explicitSources.length > 0 && (
           <section id="cited-sources" className="mt-16 border-t border-line pt-10">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-2xl font-semibold leading-tight">Cited sources in this volume</h2>
+              <h2 className="text-2xl font-semibold leading-tight">
+                Explicitly cited in this volume
+              </h2>
               <span className="text-xs font-mono font-medium text-accent">
-                {citedSources.length} {citedSources.length === 1 ? "reference" : "references"}
+                {explicitSources.length}{" "}
+                {explicitSources.length === 1 ? "direct citation" : "direct citations"}
               </span>
             </div>
             <p className="mt-2 text-sm text-muted">
-              Foundational handbooks, international standards, and peer-reviewed research cited or
-              directly applicable to this volume.
+              Sources directly referenced by canonical ID in this volume&apos;s text, with authority
+              tier and extraction provenance status.
             </p>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {citedSources.map((s) => (
-                <div
-                  key={s.source_id}
-                  className="group flex flex-col justify-between rounded-2xl border border-line bg-surface p-4 hover:border-accent/40 hover:bg-surface-2 transition-all shadow-xs"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="rounded-full bg-ink px-2.5 py-0.5 font-mono text-[11px] font-semibold text-bg">
-                        {s.source_id}
-                      </span>
-                      <span className="text-muted text-[11px] truncate">{s.source_type}</span>
-                    </div>
-                    <h3 className="mt-2.5 font-semibold leading-snug text-text group-hover:text-accent transition-colors">
-                      {s.title}
-                    </h3>
-                    {s.relevance && (
-                      <p className="mt-1.5 text-xs text-muted line-clamp-2 leading-relaxed">
-                        {s.relevance}
-                      </p>
-                    )}
-                    {s.domain_topics && s.domain_topics.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1">
-                        {s.domain_topics.slice(0, 3).map((topic) => (
-                          <span
-                            key={topic}
-                            className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted"
-                          >
-                            {topic}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-line/60 pt-3 text-xs">
-                    <Link
-                      href={`/sources#${s.source_id}`}
-                      className="font-medium text-accent hover:underline flex items-center gap-1"
-                    >
-                      Source register <span>→</span>
-                    </Link>
-                    {s.url && (
-                      <a
-                        href={s.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-muted hover:text-text transition-colors flex items-center gap-0.5"
-                      >
-                        Publisher <span>↗</span>
-                      </a>
-                    )}
-                  </div>
-                </div>
+              {explicitSources.map((s) => (
+                <SourceReferenceCard key={s.source_id} s={s} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {relatedSources.length > 0 && (
+          <section id="related-sources" className="mt-12 border-t border-line/70 pt-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-xl font-semibold leading-tight">
+                Related reference reading (topic-matched)
+              </h2>
+              <span className="text-xs font-mono text-muted">
+                {relatedSources.length} suggested
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              Not explicitly cited in this volume&apos;s prose — surfaced from the source register
+              by shared domain topic for further verification.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {relatedSources.map((s) => (
+                <SourceReferenceCard key={s.source_id} s={s} />
               ))}
             </div>
           </section>
@@ -189,10 +236,17 @@ function ArticlePage() {
                 </a>
               </li>
             ))}
-            {citedSources && citedSources.length > 0 && (
+            {explicitSources.length > 0 && (
               <li key="cited-sources">
                 <a href="#cited-sources" className="font-medium text-accent hover:underline">
-                  Cited sources ({citedSources.length})
+                  Explicitly cited ({explicitSources.length})
+                </a>
+              </li>
+            )}
+            {relatedSources.length > 0 && (
+              <li key="related-sources">
+                <a href="#related-sources" className="text-muted hover:text-accent">
+                  Related reading ({relatedSources.length})
                 </a>
               </li>
             )}

@@ -12,7 +12,9 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:sqlite": "node scripts/seed-sqlite.ts"
+    "seed:sqlite": "node scripts/seed-sqlite.ts",
+    "validate:pack": "node scripts/validate-pack.ts",
+    "generate:sources": "node scripts/generate_source_enrichment.js"
   },
   "overrides": {
     "rolldown": "1.2.1"

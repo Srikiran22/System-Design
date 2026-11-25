@@ -214,9 +214,11 @@ describe("Synchronous SQLite Local Database Engine", () => {
       expect(health.runtime.memory.rssMb).toBeGreaterThan(0);
     });
 
-    it("exportLearnerDossier exports full portfolio with metrics", () => {
+    it("exportLearnerDossier exports full portfolio with metrics and non-certification disclaimer", () => {
       const dossier = exportLearnerDossier(testUserId);
       expect(dossier.userId).toBe(testUserId);
+      expect(dossier.dossierVersion).toBe("2.0.0");
+      expect(dossier.disclaimer).toContain("not a formal INCOSE");
       expect(dossier.profile).not.toBeNull();
       expect(dossier.profile!.display_name).toBe("Ada Lovelace");
       expect(dossier.goals.length).toBe(2);
@@ -225,6 +227,69 @@ describe("Synchronous SQLite Local Database Engine", () => {
       expect(dossier.metrics.lessonsDone).toBe(1);
       expect(dossier.metrics.labsDone).toBe(1);
       expect(dossier.metrics.distinctDisciplines.sort()).toEqual(["en", "sd", "st"]);
+    });
+
+    it("enforces strict per-user isolation for evidence, snapshots, and local dev auth users", async () => {
+      const {
+        createLocalAuthUser,
+        findLocalAuthUserByEmail,
+        recordLearnerEvidence,
+        listLearnerEvidence,
+        saveLearnerSnapshot,
+        getLearnerSnapshot,
+      } = await import("./db.server");
+
+      const userA = crypto.randomUUID();
+      const userB = crypto.randomUUID();
+      const emailA = `usera-${userA.slice(0, 8)}@example.com`;
+
+      createLocalAuthUser({
+        id: userA,
+        email: emailA,
+        passwordHash: "salt:hashvalue",
+        displayName: "User A",
+        createdAt: new Date().toISOString(),
+      });
+      const found = findLocalAuthUserByEmail(emailA);
+      expect(found?.id).toBe(userA);
+
+      // Duplicate email rejected by UNIQUE constraint
+      expect(() =>
+        createLocalAuthUser({
+          id: userB,
+          email: emailA,
+          passwordHash: "salt:otherhash",
+          displayName: "User B",
+          createdAt: new Date().toISOString(),
+        }),
+      ).toThrow();
+
+      // Record evidence for userA only
+      const evRes = recordLearnerEvidence(userA, [
+        {
+          idempotency_key: "lab:lab-loop-map:v1",
+          skill_id: "st-loops",
+          evidence_type: "lab",
+          ref: "lab-loop-map",
+          score: 0.88,
+          weight: 2.5,
+          confidence: null,
+          verification_tier: "rubric-evaluated",
+          rubric_version: "1.0.0",
+          rubric_scores_json: '{"framing":4,"rigor":3}',
+          artifact_url: "https://example.com/loop-map",
+          artifact_notes: "Causal loop analysis",
+          occurred_at: "2026-11-20T10:00:00.000Z",
+        },
+      ]);
+      expect(evRes.error).toBeNull();
+      expect(listLearnerEvidence(userA)).toHaveLength(1);
+      expect(listLearnerEvidence(userB)).toHaveLength(0);
+
+      // Snapshots stay isolated per user
+      saveLearnerSnapshot(userA, JSON.stringify({ completed: ["thinking/stocks"] }));
+      expect(getLearnerSnapshot(userA)?.stateJson).toContain("thinking/stocks");
+      expect(getLearnerSnapshot(userB)).toBeNull();
     });
   });
 });

@@ -24,6 +24,7 @@ const securityHeadersMiddleware = createMiddleware().server(async ({ next }) => 
     result.headers.set("X-Content-Type-Options", "nosniff");
     result.headers.set("X-Frame-Options", "SAMEORIGIN");
     result.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    result.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   }
   return result;
 });
