@@ -3,8 +3,8 @@
 ## 1. Canonical Store Separation
 
 - **Production / Cloud (`SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY` set)**:
-  - All account reads and mutations (`profiles`, `learning_goals`, `progress_events`) execute exclusively against Supabase PostgreSQL under owner-only RLS.
-  - Silent fallbacks to local SQLite and dual-writes in production are eliminated.
+  - Account reads and mutations for `profiles`, `learning_goals`, `progress_events`, `learner_evidence`, and `learner_state_snapshots` use Supabase PostgreSQL under owner-only RLS. The evidence and snapshot tables are Lovable-managed schema dependencies and must be provisioned in staging/production before those capabilities are considered ready.
+  - The server acknowledges only confirmed event/evidence keys and a saved snapshot. Missing tables, rejected rows, and snapshot-version conflicts are returned as explicit partial failures so the browser outbox retains unconfirmed work; production code does not silently fall back to local SQLite.
 - **Local Development / CI (`node:sqlite`, `.data/system_design.sqlite` by default; server-only `SQLITE_DB_PATH` override)**:
   - Mirrors knowledge pack tables plus account tables (`profiles`, `learning_goals`, `progress_events`) and extended persistence tables (`local_auth_users`, `learner_evidence`, `learner_state_snapshots`).
 
