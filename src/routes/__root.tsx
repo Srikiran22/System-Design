@@ -80,8 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "NEET" },
       {
         name: "description",
-        content:
-          "A practical learning space for systems thinking, system design, and engineering.",
+        content: "A practical learning space for systems thinking, system design, and engineering.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
