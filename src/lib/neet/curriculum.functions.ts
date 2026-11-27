@@ -557,45 +557,46 @@ export const listLabs = createServerFn({ method: "GET" })
   .validator((input: unknown) =>
     z.object({ includeDrafts: z.boolean().optional() }).optional().parse(input),
   )
-  .handler(async ({ data }): Promise<{ labs: DynamicLabRecord[]; source: CurriculumDataSource }> =>
-    measureOperation("curriculum.listLabs", async () => {
-      const allowDrafts = await canReadDrafts(data?.includeDrafts);
-      if (!isSupabaseServerConfigured()) {
-        const cdb = await import("./curriculum-db.server");
-        return { labs: cdb.listLabsDb({ includeDrafts: allowDrafts }), source: "database" };
-      }
-      try {
-        let q = supaTable(createPublicSupabaseClient(), "curriculum_labs").select(
-          "id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order, version",
-        );
-        if (!allowDrafts) q = q.eq("status", "published");
-        const res = await q.order("sort_order", { ascending: true });
-        if (res.error || !Array.isArray(res.data)) {
+  .handler(
+    async ({ data }): Promise<{ labs: DynamicLabRecord[]; source: CurriculumDataSource }> =>
+      measureOperation("curriculum.listLabs", async () => {
+        const allowDrafts = await canReadDrafts(data?.includeDrafts);
+        if (!isSupabaseServerConfigured()) {
+          const cdb = await import("./curriculum-db.server");
+          return { labs: cdb.listLabsDb({ includeDrafts: allowDrafts }), source: "database" };
+        }
+        try {
+          let q = supaTable(createPublicSupabaseClient(), "curriculum_labs").select(
+            "id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order, version",
+          );
+          if (!allowDrafts) q = q.eq("status", "published");
+          const res = await q.order("sort_order", { ascending: true });
+          if (res.error || !Array.isArray(res.data)) {
+            return { labs: seedFallbackLabs(), source: "seed_fallback" };
+          }
+          return {
+            source: "database",
+            labs: res.data.map((r) => ({
+              id: String(r["id"]),
+              discipline: String(r["discipline"]) as Discipline,
+              skillId: String(r["skill_id"]),
+              title: String(r["title"]),
+              brief: String(r["brief"]),
+              minutes: Number(r["minutes"] ?? 30),
+              steps: (r["steps_json"] as string[]) ?? [],
+              twist: String(r["twist"]),
+              artifact: String(r["artifact"]),
+              evidenceType: String(r["evidence_type"]) as DynamicLabRecord["evidenceType"],
+              rubric: (r["rubric_json"] as DynamicLabRecord["rubric"]) ?? LAB_RUBRICS["default"]!,
+              status: String(r["status"]) as DynamicLabRecord["status"],
+              sortOrder: Number(r["sort_order"] ?? 100),
+              version: Number(r["version"] ?? 1),
+            })),
+          };
+        } catch {
           return { labs: seedFallbackLabs(), source: "seed_fallback" };
         }
-        return {
-          source: "database",
-          labs: res.data.map((r) => ({
-            id: String(r["id"]),
-            discipline: String(r["discipline"]) as Discipline,
-            skillId: String(r["skill_id"]),
-            title: String(r["title"]),
-            brief: String(r["brief"]),
-            minutes: Number(r["minutes"] ?? 30),
-            steps: (r["steps_json"] as string[]) ?? [],
-            twist: String(r["twist"]),
-            artifact: String(r["artifact"]),
-            evidenceType: String(r["evidence_type"]) as DynamicLabRecord["evidenceType"],
-            rubric: (r["rubric_json"] as DynamicLabRecord["rubric"]) ?? LAB_RUBRICS["default"]!,
-            status: String(r["status"]) as DynamicLabRecord["status"],
-            sortOrder: Number(r["sort_order"] ?? 100),
-            version: Number(r["version"] ?? 1),
-          })),
-        };
-      } catch {
-        return { labs: seedFallbackLabs(), source: "seed_fallback" };
-      }
-    }),
+      }),
   );
 
 export const listScenarios = createServerFn({ method: "GET" })
@@ -780,69 +781,70 @@ function guardAdminRateLimit(userId: string): ApiResult<never> | null {
 export const upsertCourse = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => courseUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<DynamicCourseRecord>> =>
-    measureOperation("cms.upsertCourse", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
+  .handler(
+    async ({ data, context }): Promise<ApiResult<DynamicCourseRecord>> =>
+      measureOperation("cms.upsertCourse", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
 
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.upsertCourseDb(data, context.userId);
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.upsertCourseDb(data, context.userId);
+          await recordAudit(context, {
+            action: "course.upsert",
+            resourceType: "course",
+            resourceId: res.data?.id ?? data.slug,
+            outcome: res.error ? "error" : "ok",
+            meta: { slug: data.slug, status: data.status },
+          });
+          return res;
+        }
+
+        const id = data.id ?? `course-${data.slug}`;
+        const up = await supaTable(context.supabase, "courses").upsert(
+          {
+            id,
+            slug: data.slug,
+            discipline: data.discipline,
+            title: data.title,
+            tagline: data.tagline,
+            level: data.level,
+            status: data.status,
+            about_json: data.about,
+            outcomes_json: data.outcomes,
+            artifact: data.artifact,
+            sort_order: data.sortOrder,
+            updated_by: context.userId,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "slug" },
+        );
+        if (up.error) {
+          await recordAudit(context, {
+            action: "course.upsert",
+            resourceType: "course",
+            resourceId: data.slug,
+            outcome: "error",
+          });
+          return fail(
+            "Could not save course to Supabase. Ensure docs/database/SUPABASE_SCHEMA_BLUEPRINT.sql is applied.",
+            "internal_error",
+          );
+        }
+        const fetched = await fetchSupabaseCourses(context.supabase, {
+          includeDrafts: true,
+          slug: data.slug,
+        });
+        const course = fetched.courses[0];
         await recordAudit(context, {
           action: "course.upsert",
           resourceType: "course",
-          resourceId: res.data?.id ?? data.slug,
-          outcome: res.error ? "error" : "ok",
+          resourceId: course?.id ?? id,
+          outcome: "ok",
           meta: { slug: data.slug, status: data.status },
         });
-        return res;
-      }
-
-      const id = data.id ?? `course-${data.slug}`;
-      const up = await supaTable(context.supabase, "courses").upsert(
-        {
-          id,
-          slug: data.slug,
-          discipline: data.discipline,
-          title: data.title,
-          tagline: data.tagline,
-          level: data.level,
-          status: data.status,
-          about_json: data.about,
-          outcomes_json: data.outcomes,
-          artifact: data.artifact,
-          sort_order: data.sortOrder,
-          updated_by: context.userId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "slug" },
-      );
-      if (up.error) {
-        await recordAudit(context, {
-          action: "course.upsert",
-          resourceType: "course",
-          resourceId: data.slug,
-          outcome: "error",
-        });
-        return fail(
-          "Could not save course to Supabase. Ensure docs/database/SUPABASE_SCHEMA_BLUEPRINT.sql is applied.",
-          "internal_error",
-        );
-      }
-      const fetched = await fetchSupabaseCourses(context.supabase, {
-        includeDrafts: true,
-        slug: data.slug,
-      });
-      const course = fetched.courses[0];
-      await recordAudit(context, {
-        action: "course.upsert",
-        resourceType: "course",
-        resourceId: course?.id ?? id,
-        outcome: "ok",
-        meta: { slug: data.slug, status: data.status },
-      });
-      return course ? ok(course) : fail("Saved course could not be reloaded.");
-    }),
+        return course ? ok(course) : fail("Saved course could not be reloaded.");
+      }),
   );
 
 export const setCourseStatus = createServerFn({ method: "POST" })
@@ -896,31 +898,32 @@ export const deleteCourse = createServerFn({ method: "POST" })
   .validator((input: unknown) =>
     z.object({ courseId: z.string().trim().min(1).max(120) }).parse(input),
   )
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteCourse", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.deleteCourseDb(data.courseId);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteCourse", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.deleteCourseDb(data.courseId);
+          await recordAudit(context, {
+            action: "course.delete",
+            resourceType: "course",
+            resourceId: data.courseId,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const res = await supaTable(context.supabase, "courses").delete().eq("id", data.courseId);
+        if (res.error) return fail("Failed to delete course.", "internal_error");
         await recordAudit(context, {
           action: "course.delete",
           resourceType: "course",
           resourceId: data.courseId,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const res = await supaTable(context.supabase, "courses").delete().eq("id", data.courseId);
-      if (res.error) return fail("Failed to delete course.", "internal_error");
-      await recordAudit(context, {
-        action: "course.delete",
-        resourceType: "course",
-        resourceId: data.courseId,
-        outcome: "ok",
-      });
-      return ok({ deleted: true });
-    }),
+        return ok({ deleted: true });
+      }),
   );
 
 export const upsertModule = createServerFn({ method: "POST" })
@@ -978,33 +981,34 @@ export const deleteModule = createServerFn({ method: "POST" })
   .validator((input: unknown) =>
     z.object({ moduleId: z.string().trim().min(1).max(120) }).parse(input),
   )
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteModule", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.deleteModuleDb(data.moduleId);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteModule", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.deleteModuleDb(data.moduleId);
+          await recordAudit(context, {
+            action: "module.delete",
+            resourceType: "course_module",
+            resourceId: data.moduleId,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const res = await supaTable(context.supabase, "course_modules")
+          .delete()
+          .eq("id", data.moduleId);
+        if (res.error) return fail("Failed to delete module.", "internal_error");
         await recordAudit(context, {
           action: "module.delete",
           resourceType: "course_module",
           resourceId: data.moduleId,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const res = await supaTable(context.supabase, "course_modules")
-        .delete()
-        .eq("id", data.moduleId);
-      if (res.error) return fail("Failed to delete module.", "internal_error");
-      await recordAudit(context, {
-        action: "module.delete",
-        resourceType: "course_module",
-        resourceId: data.moduleId,
-        outcome: "ok",
-      });
-      return ok({ deleted: true });
-    }),
+        return ok({ deleted: true });
+      }),
   );
 
 export const reorderModules = createServerFn({ method: "POST" })
@@ -1017,35 +1021,36 @@ export const reorderModules = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data, context }): Promise<ApiResult<{ updated: number }>> =>
-    measureOperation("cms.reorderModules", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.reorderModulesDb(data.courseId, data.orderedModuleIds);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ updated: number }>> =>
+      measureOperation("cms.reorderModules", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.reorderModulesDb(data.courseId, data.orderedModuleIds);
+          await recordAudit(context, {
+            action: "module.reorder",
+            resourceType: "course",
+            resourceId: data.courseId,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        for (let i = 0; i < data.orderedModuleIds.length; i++) {
+          await supaTable(context.supabase, "course_modules")
+            .update({ sort_order: (i + 1) * 10, updated_at: new Date().toISOString() })
+            .eq("id", data.orderedModuleIds[i]!)
+            .eq("course_id", data.courseId);
+        }
         await recordAudit(context, {
           action: "module.reorder",
           resourceType: "course",
           resourceId: data.courseId,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      for (let i = 0; i < data.orderedModuleIds.length; i++) {
-        await supaTable(context.supabase, "course_modules")
-          .update({ sort_order: (i + 1) * 10, updated_at: new Date().toISOString() })
-          .eq("id", data.orderedModuleIds[i]!)
-          .eq("course_id", data.courseId);
-      }
-      await recordAudit(context, {
-        action: "module.reorder",
-        resourceType: "course",
-        resourceId: data.courseId,
-        outcome: "ok",
-      });
-      return ok({ updated: data.orderedModuleIds.length });
-    }),
+        return ok({ updated: data.orderedModuleIds.length });
+      }),
   );
 
 export const upsertLesson = createServerFn({ method: "POST" })
@@ -1069,10 +1074,9 @@ export const upsertLesson = createServerFn({ method: "POST" })
       }
       const seedError = await ensureCanonicalCompetencyRows(context.supabase);
       if (seedError) return fail(seedError, "internal_error");
-      const referenceErrors = validateSkillReferences(
-        CANONICAL_COMPETENCY_IDS,
-        [{ source: "Lesson " + data.courseId + "/" + data.slug, skillIds: data.skillIds }],
-      );
+      const referenceErrors = validateSkillReferences(CANONICAL_COMPETENCY_IDS, [
+        { source: "Lesson " + data.courseId + "/" + data.slug, skillIds: data.skillIds },
+      ]);
       if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const id = data.id ?? `les-${data.courseId}-${data.slug}`;
       const res = await supaTable(context.supabase, "course_lessons").upsert(
@@ -1110,461 +1114,473 @@ export const deleteLesson = createServerFn({ method: "POST" })
   .validator((input: unknown) =>
     z.object({ lessonId: z.string().trim().min(1).max(120) }).parse(input),
   )
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteLesson", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.deleteLessonDb(data.lessonId);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteLesson", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.deleteLessonDb(data.lessonId);
+          await recordAudit(context, {
+            action: "lesson.delete",
+            resourceType: "course_lesson",
+            resourceId: data.lessonId,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const res = await supaTable(context.supabase, "course_lessons")
+          .delete()
+          .eq("id", data.lessonId);
+        if (res.error) return fail("Failed to delete lesson.", "internal_error");
         await recordAudit(context, {
           action: "lesson.delete",
           resourceType: "course_lesson",
           resourceId: data.lessonId,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const res = await supaTable(context.supabase, "course_lessons")
-        .delete()
-        .eq("id", data.lessonId);
-      if (res.error) return fail("Failed to delete lesson.", "internal_error");
-      await recordAudit(context, {
-        action: "lesson.delete",
-        resourceType: "course_lesson",
-        resourceId: data.lessonId,
-        outcome: "ok",
-      });
-      return ok({ deleted: true });
-    }),
+        return ok({ deleted: true });
+      }),
   );
 
 export const upsertCompetency = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => competencyUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<DynamicCompetencyRecord>> =>
-    measureOperation("cms.upsertCompetency", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.upsertCompetencyDb(data);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<DynamicCompetencyRecord>> =>
+      measureOperation("cms.upsertCompetency", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.upsertCompetencyDb(data);
+          await recordAudit(context, {
+            action: "competency.upsert",
+            resourceType: "competency",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+
+        const supportedErrors = validateCanonicalCompetencyDefinition(data);
+        if (supportedErrors.length > 0) {
+          return fail(supportedErrors.join(" "), "validation_error");
+        }
+        const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+        if (seedError) return fail(seedError, "internal_error");
+        const current = await listCompetencies();
+        const referenceErrors = validateCompetencyGraphReferences(current.competencies, [data]);
+        if (referenceErrors.length > 0) {
+          return fail(referenceErrors.join(" "), "validation_error");
+        }
+        const cycles = detectCompetencyCycles([
+          ...current.competencies
+            .filter((c) => c.id !== data.id)
+            .map((c) => ({ id: c.id, prerequisites: c.prerequisites })),
+          { id: data.id, prerequisites: data.prerequisites },
+        ]);
+        if (cycles.length > 0) {
+          return fail(`Circular prerequisite graph rejected: ${cycles[0]}`, "cycle_detected");
+        }
+
+        const res = await supaTable(context.supabase, "curriculum_competencies").upsert(
+          {
+            id: data.id,
+            code: data.code,
+            domain: data.domain,
+            title: data.title,
+            blurb: data.blurb,
+            definition: data.definition,
+            bloom_target: data.bloomTarget,
+            prerequisites_json: data.prerequisites,
+            relations_json: data.relations,
+            framework_anchors_json: data.frameworkAnchors,
+            level_descriptors_json: data.levelDescriptors,
+            mapped_volumes_json: data.mappedVolumes,
+            role_tags_json: data.roleTags,
+            crosswalk_json: data.crosswalk
+              ? { neetCompetencyId: data.id, ...data.crosswalk }
+              : null,
+            version: data.version,
+            sort_order: data.sortOrder,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+        if (res.error) return fail("Failed to save competency.", "internal_error");
         await recordAudit(context, {
           action: "competency.upsert",
           resourceType: "competency",
           resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-
-      const supportedErrors = validateCanonicalCompetencyDefinition(data);
-      if (supportedErrors.length > 0) {
-        return fail(supportedErrors.join(" "), "validation_error");
-      }
-      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
-      if (seedError) return fail(seedError, "internal_error");
-      const current = await listCompetencies();
-      const referenceErrors = validateCompetencyGraphReferences(current.competencies, [data]);
-      if (referenceErrors.length > 0) {
-        return fail(referenceErrors.join(" "), "validation_error");
-      }
-      const cycles = detectCompetencyCycles([
-        ...current.competencies
-          .filter((c) => c.id !== data.id)
-          .map((c) => ({ id: c.id, prerequisites: c.prerequisites })),
-        { id: data.id, prerequisites: data.prerequisites },
-      ]);
-      if (cycles.length > 0) {
-        return fail(`Circular prerequisite graph rejected: ${cycles[0]}`, "cycle_detected");
-      }
-
-      const res = await supaTable(context.supabase, "curriculum_competencies").upsert(
-        {
+        return ok({
           id: data.id,
           code: data.code,
           domain: data.domain,
           title: data.title,
           blurb: data.blurb,
           definition: data.definition,
-          bloom_target: data.bloomTarget,
-          prerequisites_json: data.prerequisites,
-          relations_json: data.relations,
-          framework_anchors_json: data.frameworkAnchors,
-          level_descriptors_json: data.levelDescriptors,
-          mapped_volumes_json: data.mappedVolumes,
-          role_tags_json: data.roleTags,
-          crosswalk_json: data.crosswalk ? { neetCompetencyId: data.id, ...data.crosswalk } : null,
+          bloomTarget: data.bloomTarget,
+          prerequisites: data.prerequisites,
+          relations: data.relations,
+          frameworkAnchors: data.frameworkAnchors,
+          levelDescriptors: data.levelDescriptors,
+          mappedVolumes: data.mappedVolumes,
+          roleTags: data.roleTags,
           version: data.version,
-          sort_order: data.sortOrder,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (res.error) return fail("Failed to save competency.", "internal_error");
-      await recordAudit(context, {
-        action: "competency.upsert",
-        resourceType: "competency",
-        resourceId: data.id,
-        outcome: "ok",
-      });
-      return ok({
-        id: data.id,
-        code: data.code,
-        domain: data.domain,
-        title: data.title,
-        blurb: data.blurb,
-        definition: data.definition,
-        bloomTarget: data.bloomTarget,
-        prerequisites: data.prerequisites,
-        relations: data.relations,
-        frameworkAnchors: data.frameworkAnchors,
-        levelDescriptors: data.levelDescriptors,
-        mappedVolumes: data.mappedVolumes,
-        roleTags: data.roleTags,
-        version: data.version,
-        sortOrder: data.sortOrder,
-        ...(data.crosswalk ? { crosswalk: { neetCompetencyId: data.id, ...data.crosswalk } } : {}),
-      });
-    }),
+          sortOrder: data.sortOrder,
+          ...(data.crosswalk
+            ? { crosswalk: { neetCompetencyId: data.id, ...data.crosswalk } }
+            : {}),
+        });
+      }),
   );
 
 export const deleteCompetency = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => z.object({ id: z.string().trim().min(1).max(100) }).parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteCompetency", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.deleteCompetencyDb(data.id);
-        await recordAudit(context, {
-          action: "competency.delete",
-          resourceType: "competency",
-          resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteCompetency", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.deleteCompetencyDb(data.id);
+          await recordAudit(context, {
+            action: "competency.delete",
+            resourceType: "competency",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        if (CANONICAL_COMPETENCY_IDS.has(data.id)) {
+          return fail(
+            "Core competency " +
+              data.id +
+              " cannot be deleted; the learner model and scoring UI " +
+              "depend on the canonical 16-skill catalogue.",
+            "conflict",
+          );
+        }
+        const [current, courses, labs, scenarios, capstone, roleProfiles] = await Promise.all([
+          listCompetencies(),
+          listCourses({ data: { includeDrafts: true } }),
+          listLabs({ data: { includeDrafts: true } }),
+          listScenarios({ data: { includeDrafts: true } }),
+          getActiveCapstone(),
+          listRoleProfiles(),
+        ]);
+        const references = findCompetencyReferences(data.id, {
+          competencies: current.competencies,
+          courses: courses.courses,
+          labs: labs.labs,
+          scenarios: scenarios.scenarios,
+          capstone: capstone.capstone,
+          roleProfiles: roleProfiles.roleProfiles,
         });
-        return res;
-      }
-      if (CANONICAL_COMPETENCY_IDS.has(data.id)) {
-        return fail(
-          "Core competency " +
-            data.id +
-            " cannot be deleted; the learner model and scoring UI " +
-            "depend on the canonical 16-skill catalogue.",
-          "conflict",
-        );
-      }
-      const [current, courses, labs, scenarios, capstone, roleProfiles] = await Promise.all([
-        listCompetencies(),
-        listCourses({ data: { includeDrafts: true } }),
-        listLabs({ data: { includeDrafts: true } }),
-        listScenarios({ data: { includeDrafts: true } }),
-        getActiveCapstone(),
-        listRoleProfiles(),
-      ]);
-      const references = findCompetencyReferences(data.id, {
-        competencies: current.competencies,
-        courses: courses.courses,
-        labs: labs.labs,
-        scenarios: scenarios.scenarios,
-        capstone: capstone.capstone,
-        roleProfiles: roleProfiles.roleProfiles,
-      });
-      if (references.length > 0) {
-        return fail(
-          "Cannot delete competency " +
-            data.id +
-            "; it is still referenced by: " +
-            references.join(", ") +
-            ".",
-          "conflict",
-        );
-      }
-      const res = await supaTable(context.supabase, "curriculum_competencies")
-        .delete()
-        .eq("id", data.id);
-      if (res.error) return fail("Failed to delete competency.", "internal_error");
-      return ok({ deleted: true });
-    }),
+        if (references.length > 0) {
+          return fail(
+            "Cannot delete competency " +
+              data.id +
+              "; it is still referenced by: " +
+              references.join(", ") +
+              ".",
+            "conflict",
+          );
+        }
+        const res = await supaTable(context.supabase, "curriculum_competencies")
+          .delete()
+          .eq("id", data.id);
+        if (res.error) return fail("Failed to delete competency.", "internal_error");
+        return ok({ deleted: true });
+      }),
   );
 
 export const upsertLab = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => labUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<DynamicLabRecord>> =>
-    measureOperation("cms.upsertLab", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.upsertLabDb(data);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<DynamicLabRecord>> =>
+      measureOperation("cms.upsertLab", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.upsertLabDb(data);
+          await recordAudit(context, {
+            action: "lab.upsert",
+            resourceType: "lab",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+        if (seedError) return fail(seedError, "internal_error");
+        const referenceErrors = validateSkillReferences(CANONICAL_COMPETENCY_IDS, [
+          { source: "Lab " + data.id, skillIds: [data.skillId] },
+        ]);
+        if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
+        const res = await supaTable(context.supabase, "curriculum_labs").upsert(
+          {
+            id: data.id,
+            discipline: data.discipline,
+            skill_id: data.skillId,
+            title: data.title,
+            brief: data.brief,
+            minutes: data.minutes,
+            steps_json: data.steps,
+            twist: data.twist,
+            artifact: data.artifact,
+            evidence_type: data.evidenceType,
+            rubric_json: data.rubric,
+            status: data.status,
+            sort_order: data.sortOrder,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+        if (res.error) return fail("Failed to save lab.", "internal_error");
         await recordAudit(context, {
           action: "lab.upsert",
           resourceType: "lab",
           resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
-      if (seedError) return fail(seedError, "internal_error");
-      const referenceErrors = validateSkillReferences(
-        CANONICAL_COMPETENCY_IDS,
-        [{ source: "Lab " + data.id, skillIds: [data.skillId] }],
-      );
-      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
-      const res = await supaTable(context.supabase, "curriculum_labs").upsert(
-        {
-          id: data.id,
-          discipline: data.discipline,
-          skill_id: data.skillId,
-          title: data.title,
-          brief: data.brief,
-          minutes: data.minutes,
-          steps_json: data.steps,
-          twist: data.twist,
-          artifact: data.artifact,
-          evidence_type: data.evidenceType,
-          rubric_json: data.rubric,
-          status: data.status,
-          sort_order: data.sortOrder,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (res.error) return fail("Failed to save lab.", "internal_error");
-      await recordAudit(context, {
-        action: "lab.upsert",
-        resourceType: "lab",
-        resourceId: data.id,
-        outcome: "ok",
-      });
-      return ok({ ...data, version: 1 });
-    }),
+        return ok({ ...data, version: 1 });
+      }),
   );
 
 export const deleteLab = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => z.object({ id: z.string().trim().min(1).max(120) }).parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteLab", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.deleteLabDb(data.id);
-        await recordAudit(context, {
-          action: "lab.delete",
-          resourceType: "lab",
-          resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
-        });
-        return res;
-      }
-      const res = await supaTable(context.supabase, "curriculum_labs").delete().eq("id", data.id);
-      if (res.error) return fail("Failed to delete lab.", "internal_error");
-      return ok({ deleted: true });
-    }),
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteLab", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.deleteLabDb(data.id);
+          await recordAudit(context, {
+            action: "lab.delete",
+            resourceType: "lab",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const res = await supaTable(context.supabase, "curriculum_labs").delete().eq("id", data.id);
+        if (res.error) return fail("Failed to delete lab.", "internal_error");
+        return ok({ deleted: true });
+      }),
   );
 
 export const upsertScenario = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => scenarioUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<ScenarioChallenge>> =>
-    measureOperation("cms.upsertScenario", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.upsertScenarioDb(data);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<ScenarioChallenge>> =>
+      measureOperation("cms.upsertScenario", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.upsertScenarioDb(data);
+          await recordAudit(context, {
+            action: "scenario.upsert",
+            resourceType: "scenario",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+        if (seedError) return fail(seedError, "internal_error");
+        const referenceErrors = validateSkillReferences(CANONICAL_COMPETENCY_IDS, [
+          { source: "Scenario " + data.id, skillIds: [data.skillId] },
+        ]);
+        if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
+        const res = await supaTable(context.supabase, "curriculum_scenarios").upsert(
+          {
+            id: data.id,
+            skill_id: data.skillId,
+            title: data.title,
+            domain_context: data.domainContext,
+            situation: data.situation,
+            constraints_json: data.constraints,
+            question: data.question,
+            options_json: data.options,
+            invalidation_prompt: data.invalidationPrompt,
+            status: data.status,
+            sort_order: data.sortOrder,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+        if (res.error) return fail("Failed to save scenario.", "internal_error");
         await recordAudit(context, {
           action: "scenario.upsert",
           resourceType: "scenario",
           resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
-      if (seedError) return fail(seedError, "internal_error");
-      const referenceErrors = validateSkillReferences(
-        CANONICAL_COMPETENCY_IDS,
-        [{ source: "Scenario " + data.id, skillIds: [data.skillId] }],
-      );
-      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
-      const res = await supaTable(context.supabase, "curriculum_scenarios").upsert(
-        {
+        return ok({
           id: data.id,
-          skill_id: data.skillId,
+          skillId: data.skillId,
           title: data.title,
-          domain_context: data.domainContext,
+          domainContext: data.domainContext,
           situation: data.situation,
-          constraints_json: data.constraints,
+          constraints: data.constraints,
           question: data.question,
-          options_json: data.options,
-          invalidation_prompt: data.invalidationPrompt,
-          status: data.status,
-          sort_order: data.sortOrder,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (res.error) return fail("Failed to save scenario.", "internal_error");
-      await recordAudit(context, {
-        action: "scenario.upsert",
-        resourceType: "scenario",
-        resourceId: data.id,
-        outcome: "ok",
-      });
-      return ok({
-        id: data.id,
-        skillId: data.skillId,
-        title: data.title,
-        domainContext: data.domainContext,
-        situation: data.situation,
-        constraints: data.constraints,
-        question: data.question,
-        options: data.options,
-        invalidationPrompt: data.invalidationPrompt,
-      });
-    }),
+          options: data.options,
+          invalidationPrompt: data.invalidationPrompt,
+        });
+      }),
   );
 
 export const deleteScenario = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => z.object({ id: z.string().trim().min(1).max(120) }).parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteScenario", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        return cdb.deleteScenarioDb(data.id);
-      }
-      const res = await supaTable(context.supabase, "curriculum_scenarios")
-        .delete()
-        .eq("id", data.id);
-      if (res.error) return fail("Failed to delete scenario.", "internal_error");
-      return ok({ deleted: true });
-    }),
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteScenario", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          return cdb.deleteScenarioDb(data.id);
+        }
+        const res = await supaTable(context.supabase, "curriculum_scenarios")
+          .delete()
+          .eq("id", data.id);
+        if (res.error) return fail("Failed to delete scenario.", "internal_error");
+        return ok({ deleted: true });
+      }),
   );
 
 export const upsertCapstone = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => capstoneUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<DynamicCapstoneRecord>> =>
-    measureOperation("cms.upsertCapstone", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        const res = cdb.upsertCapstoneDb(data);
+  .handler(
+    async ({ data, context }): Promise<ApiResult<DynamicCapstoneRecord>> =>
+      measureOperation("cms.upsertCapstone", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          const res = cdb.upsertCapstoneDb(data);
+          await recordAudit(context, {
+            action: "capstone.upsert",
+            resourceType: "capstone",
+            resourceId: data.id,
+            outcome: res.error ? "error" : "ok",
+          });
+          return res;
+        }
+        const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+        if (seedError) return fail(seedError, "internal_error");
+        const referenceErrors = validateSkillReferences(
+          CANONICAL_COMPETENCY_IDS,
+          data.milestones.map((milestone) => ({
+            source: "Capstone milestone " + milestone.id,
+            skillIds: milestone.skillIds,
+          })),
+        );
+        if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
+        const res = await supaTable(context.supabase, "curriculum_capstones").upsert(
+          {
+            id: data.id,
+            version: data.version,
+            title: data.title,
+            summary: data.summary,
+            disclaimer: data.disclaimer,
+            change_impact_json: data.changeImpactChallenge,
+            milestones_json: data.milestones,
+            status: data.status,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+        if (res.error) return fail("Failed to save capstone.", "internal_error");
         await recordAudit(context, {
           action: "capstone.upsert",
           resourceType: "capstone",
           resourceId: data.id,
-          outcome: res.error ? "error" : "ok",
+          outcome: "ok",
         });
-        return res;
-      }
-      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
-      if (seedError) return fail(seedError, "internal_error");
-      const referenceErrors = validateSkillReferences(
-        CANONICAL_COMPETENCY_IDS,
-        data.milestones.map((milestone) => ({
-          source: "Capstone milestone " + milestone.id,
-          skillIds: milestone.skillIds,
-        })),
-      );
-      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
-      const res = await supaTable(context.supabase, "curriculum_capstones").upsert(
-        {
-          id: data.id,
-          version: data.version,
-          title: data.title,
-          summary: data.summary,
-          disclaimer: data.disclaimer,
-          change_impact_json: data.changeImpactChallenge,
-          milestones_json: data.milestones,
-          status: data.status,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (res.error) return fail("Failed to save capstone.", "internal_error");
-      await recordAudit(context, {
-        action: "capstone.upsert",
-        resourceType: "capstone",
-        resourceId: data.id,
-        outcome: "ok",
-      });
-      return ok(data);
-    }),
+        return ok(data);
+      }),
   );
 
 export const upsertRoleProfile = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => roleProfileUpsertSchema.parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<RoleProfile>> =>
-    measureOperation("cms.upsertRoleProfile", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        return cdb.upsertRoleProfileDb(data);
-      }
-      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
-      if (seedError) return fail(seedError, "internal_error");
-      const referenceErrors = validateRoleProfileReferences(
-        CANONICAL_COMPETENCY_IDS,
-        data.requiredLevels,
-        "Role profile " + data.id,
-      );
-      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
-      const res = await supaTable(context.supabase, "curriculum_role_profiles").upsert(
-        {
+  .handler(
+    async ({ data, context }): Promise<ApiResult<RoleProfile>> =>
+      measureOperation("cms.upsertRoleProfile", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          return cdb.upsertRoleProfileDb(data);
+        }
+        const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+        if (seedError) return fail(seedError, "internal_error");
+        const referenceErrors = validateRoleProfileReferences(
+          CANONICAL_COMPETENCY_IDS,
+          data.requiredLevels,
+          "Role profile " + data.id,
+        );
+        if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
+        const res = await supaTable(context.supabase, "curriculum_role_profiles").upsert(
+          {
+            id: data.id,
+            title: data.title,
+            status: data.status,
+            disclaimer: data.disclaimer,
+            summary: data.summary,
+            required_levels_json: data.requiredLevels,
+            sort_order: data.sortOrder,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+        if (res.error) return fail("Failed to save role profile.", "internal_error");
+        return ok({
           id: data.id,
           title: data.title,
-          status: data.status,
+          status: "provisional",
           disclaimer: data.disclaimer,
           summary: data.summary,
-          required_levels_json: data.requiredLevels,
-          sort_order: data.sortOrder,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-      if (res.error) return fail("Failed to save role profile.", "internal_error");
-      return ok({
-        id: data.id,
-        title: data.title,
-        status: "provisional",
-        disclaimer: data.disclaimer,
-        summary: data.summary,
-        requiredLevels: data.requiredLevels,
-      });
-    }),
+          requiredLevels: data.requiredLevels,
+        });
+      }),
   );
 
 export const deleteRoleProfile = createServerFn({ method: "POST" })
   .middleware([requireAuthorOrAdmin])
   .validator((input: unknown) => z.object({ id: z.string().trim().min(1).max(100) }).parse(input))
-  .handler(async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
-    measureOperation("cms.deleteRoleProfile", async () => {
-      const rl = guardAdminRateLimit(context.userId);
-      if (rl) return rl;
-      if (context.authMode === "local_dev" || !context.supabase) {
-        const cdb = await import("./curriculum-db.server");
-        return cdb.deleteRoleProfileDb(data.id);
-      }
-      const res = await supaTable(context.supabase, "curriculum_role_profiles")
-        .delete()
-        .eq("id", data.id);
-      if (res.error) return fail("Failed to delete role profile.", "internal_error");
-      return ok({ deleted: true });
-    }),
+  .handler(
+    async ({ data, context }): Promise<ApiResult<{ deleted: boolean }>> =>
+      measureOperation("cms.deleteRoleProfile", async () => {
+        const rl = guardAdminRateLimit(context.userId);
+        if (rl) return rl;
+        if (context.authMode === "local_dev" || !context.supabase) {
+          const cdb = await import("./curriculum-db.server");
+          return cdb.deleteRoleProfileDb(data.id);
+        }
+        const res = await supaTable(context.supabase, "curriculum_role_profiles")
+          .delete()
+          .eq("id", data.id);
+        if (res.error) return fail("Failed to delete role profile.", "internal_error");
+        return ok({ deleted: true });
+      }),
   );
 
 export const importCourseBundle = createServerFn({ method: "POST" })
