@@ -554,7 +554,7 @@ export function initTablesSync(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS curriculum_labs (
       id TEXT PRIMARY KEY,
       discipline TEXT NOT NULL,
-      skill_id TEXT NOT NULL,
+      skill_id TEXT NOT NULL REFERENCES curriculum_competencies(id) ON DELETE RESTRICT,
       title TEXT NOT NULL,
       brief TEXT NOT NULL,
       minutes INTEGER NOT NULL,
@@ -572,7 +572,7 @@ export function initTablesSync(db: DatabaseSync): void {
 
     CREATE TABLE IF NOT EXISTS curriculum_scenarios (
       id TEXT PRIMARY KEY,
-      skill_id TEXT NOT NULL,
+      skill_id TEXT NOT NULL REFERENCES curriculum_competencies(id) ON DELETE RESTRICT,
       title TEXT NOT NULL,
       domain_context TEXT NOT NULL,
       situation TEXT NOT NULL,
