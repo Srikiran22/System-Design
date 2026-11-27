@@ -476,7 +476,8 @@ export function upsertCourseDb(
       .get(input.slug) as { id: string; version: number } | undefined;
     const existingById = input.id
       ? (db.prepare("SELECT id, version FROM courses WHERE id = ?").get(input.id) as
-          { id: string; version: number } | undefined)
+          | { id: string; version: number }
+          | undefined)
       : undefined;
 
     if (existingBySlug && existingById && existingBySlug.id !== existingById.id) {
@@ -595,13 +596,15 @@ export function upsertModuleDb(
 }> {
   try {
     const course = db.prepare("SELECT id FROM courses WHERE id = ?").get(input.courseId) as
-      { id: string } | undefined;
+      | { id: string }
+      | undefined;
     if (!course) return fail("Target course not found.", "not_found");
 
     const now = new Date().toISOString();
     const existing = input.id
       ? (db.prepare("SELECT id FROM course_modules WHERE id = ?").get(input.id) as
-          { id: string } | undefined)
+          | { id: string }
+          | undefined)
       : (db
           .prepare("SELECT id FROM course_modules WHERE course_id = ? AND slug = ?")
           .get(input.courseId, input.slug) as { id: string } | undefined);
@@ -694,7 +697,8 @@ export function upsertLessonDb(
     const now = new Date().toISOString();
     const existing = input.id
       ? (db.prepare("SELECT id FROM course_lessons WHERE id = ?").get(input.id) as
-          { id: string } | undefined)
+          | { id: string }
+          | undefined)
       : (db
           .prepare("SELECT id FROM course_lessons WHERE course_id = ? AND slug = ?")
           .get(input.courseId, input.slug) as { id: string } | undefined);
@@ -964,7 +968,11 @@ export function deleteCompetencyDb(
     const references = findCompetencyReferences(id, inventory);
     if (references.length > 0) {
       return fail(
-        "Cannot delete competency " + id + "; it is still referenced by: " + references.join(", ") + ".",
+        "Cannot delete competency " +
+          id +
+          "; it is still referenced by: " +
+          references.join(", ") +
+          ".",
         "conflict",
       );
     }
@@ -1365,7 +1373,11 @@ export function importCourseBundleDb(
   scenarioCount: number;
 }> {
   const existing = listCompetenciesDb(db);
-  const integrityErrors = validateCourseBundleReferences(bundle, existing, CANONICAL_COMPETENCY_IDS);
+  const integrityErrors = validateCourseBundleReferences(
+    bundle,
+    existing,
+    CANONICAL_COMPETENCY_IDS,
+  );
   if (integrityErrors.length > 0) {
     return fail(integrityErrors.join(" "), "validation_error");
   }
