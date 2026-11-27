@@ -21,7 +21,6 @@ import {
   upsertLabDb,
   upsertLessonDb,
   upsertModuleDb,
-  upsertScenarioDb,
 } from "./curriculum-db.server";
 import { competencyUpsertSchema, courseBundleSchema, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
 
