@@ -21,45 +21,15 @@
 3. **Cross-Device Hydration (`ProgressSync.tsx`)**:
    - On sign-in, `ProgressSync` requests `getLearnerSnapshotFn()` and merges remote snapshot state with local state (`mergeStates`) without discarding offline work.
 
-## 3. Recommended Lovable Cloud Schema Migration (Apply via Lovable Editor)
+## 3. Managed Cloud Schema Prerequisites
 
-Per repository guardrails (`AGENTS.md`), `drizzle/` and `supabase/migrations/` are managed via Lovable and must not be edited directly in this repository. The application already targets `learner_evidence` and `learner_state_snapshots` in its production account functions; those tables and their owner-only RLS policies are deployment prerequisites. Use the following SQL as the schema reference when requesting the change through Lovable Cloud, then verify the actual deployed schema and policies in staging before treating cross-device evidence/snapshot persistence as production-ready:
+Production account functions use two Lovable-managed tables in addition to the core account tables:
 
-```sql
-CREATE TABLE public.learner_evidence (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  idempotency_key text NOT NULL,
-  skill_id text NOT NULL,
-  evidence_type text NOT NULL CHECK (evidence_type IN ('quiz','explain','variant','lab','artifact','review')),
-  ref text NOT NULL,
-  score double precision NOT NULL CHECK (score >= 0 AND score <= 1),
-  weight double precision NOT NULL CHECK (weight > 0 AND weight <= 10),
-  confidence double precision NULL CHECK (confidence >= 0 AND confidence <= 1),
-  verification_tier text NOT NULL CHECK (verification_tier IN ('self-assessed','automated-check','rubric-evaluated','reviewer-verified')),
-  rubric_version text NULL,
-  rubric_scores jsonb NULL,
-  artifact_url text NULL,
-  artifact_notes text NULL,
-  occurred_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, idempotency_key)
-);
+- `learner_evidence` stores learner evidence with idempotency keys, competency references, scores, verification tiers, rubric metadata, artifact metadata, and reviewer fields.
+- `learner_state_snapshots` stores the account-scoped state snapshot and its optimistic-concurrency version.
 
-CREATE TABLE public.learner_state_snapshots (
-  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  state_json jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
+The canonical schema and row-level security specification is [`docs/database/SUPABASE_SCHEMA_BLUEPRINT.sql`](./database/SUPABASE_SCHEMA_BLUEPRINT.sql). The companion [pgTAP test suite](./database/rls_pgtap_tests.sql) defines 10 positive/negative assertions for published/draft visibility, learner isolation, evidence verification tiers, and author permissions.
 
-ALTER TABLE public.learner_evidence ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.learner_state_snapshots ENABLE ROW LEVEL SECURITY;
+**Do not copy an older inline SQL example or edit `drizzle/` / `supabase/migrations/` directly.** Request schema changes through Lovable Cloud, then verify the deployed schema and RLS policies in staging. Repository CI does not connect to a live Supabase project and therefore cannot prove these tables are provisioned. This remains part of [issue #7](https://github.com/Srikiran22/System-Design/issues/7).
 
-CREATE POLICY "owner_select_evidence" ON public.learner_evidence FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "owner_upsert_evidence" ON public.learner_evidence FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "owner_update_evidence" ON public.learner_evidence FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "owner_select_snapshot" ON public.learner_state_snapshots FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "owner_upsert_snapshot" ON public.learner_state_snapshots FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "owner_update_snapshot" ON public.learner_state_snapshots FOR UPDATE USING (auth.uid() = user_id);
-```
+When the schema is missing or rejects a write, production account functions return an explicit partial-sync result. `ProgressSync.tsx` removes only server-confirmed event/evidence keys and retains unconfirmed work in the browser outbox for retry. Production does not fall back to local SQLite.
