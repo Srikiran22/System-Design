@@ -51,7 +51,6 @@ import {
   validateCourseBundleReferences,
   validateRoleProfileReferences,
   validateSkillReferences,
-  validateSupportedCompetencyIds,
 } from "./curriculum-integrity";
 import type { AuditLogRecord, PaginatedResult, UserRoleRecord } from "./db.server";
 
