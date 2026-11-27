@@ -289,6 +289,21 @@ describe("dynamic database-backed curriculum engine", () => {
     const templatePath = path.resolve(process.cwd(), "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json");
     const bundle = JSON.parse(fs.readFileSync(templatePath, "utf-8"));
     const existingLesson = bundle.modules[0].lessons[0];
+    const invalidBundlePause = JSON.parse(JSON.stringify(bundle));
+    invalidBundlePause.modules[0].lessons[0].skillIds = ["sd-reliability"];
+    invalidBundlePause.modules[0].lessons[0].blocks = [
+      {
+        t: "pause",
+        id: "pause-missing-skill",
+        skillId: "missing-skill",
+        q: "Which choice is correct?",
+        options: ["A", "B"],
+        answer: 0,
+        why: "The explanation is supplied.",
+      },
+    ];
+    expect(courseBundleSchema.safeParse(invalidBundlePause).success).toBe(false);
+
     bundle.modules[0].lessons.push({
       ...existingLesson,
       slug: "second-lesson",
