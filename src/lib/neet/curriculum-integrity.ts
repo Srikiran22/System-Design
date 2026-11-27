@@ -41,7 +41,7 @@ function stableJson(value: unknown): string {
       "}"
     );
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "undefined";
 }
 
 /**
