@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { initTablesSync } from "./db.server";
 import {
+  deleteCompetencyDb,
   deleteCourseDb,
   exportCourseBundleDb,
   getCourseBySlugDb,
@@ -21,7 +22,8 @@ import {
   upsertLessonDb,
   upsertModuleDb,
 } from "./curriculum-db.server";
-import { courseBundleSchema, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import { competencyUpsertSchema, courseBundleSchema, detectCompetencyCycles, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import { validateCompetencyGraphReferences } from "./curriculum-integrity";
 
 function createTestDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -145,6 +147,29 @@ describe("dynamic database-backed curriculum engine", () => {
     );
     expect(mod.error).toBeNull();
 
+    const missingSkillLesson = upsertLessonDb(
+      {
+        courseId: created.data!.id,
+        moduleId: mod.data!.id,
+        slug: "missing-skill",
+        title: "Missing Skill",
+        summary: "This mapping must fail.",
+        minutes: 10,
+        skillIds: ["missing-skill"],
+        blocks: [{ t: "p", text: "This should not be stored." }],
+        keep: [],
+        status: "published",
+        sortOrder: 5,
+      },
+      "author-1",
+      db,
+    );
+    expect(missingSkillLesson.errorCode).toBe("validation_error");
+
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((competency) => competency.id === "st-stocks")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
+
     const les = upsertLessonDb(
       {
         courseId: created.data!.id,
@@ -167,6 +192,21 @@ describe("dynamic database-backed curriculum engine", () => {
     );
     expect(les.error).toBeNull();
 
+    // Storage-level checks protect existing rows even when a caller bypasses the service layer.
+    expect(() =>
+      db.prepare(
+        "INSERT INTO curriculum_labs (id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("lab-orphan", "design", "missing-skill", "Orphan Lab", "Invalid skill reference.", 10, "[]", "Constraint twist.", "Artifact", "lab", "{}", "draft", 1),
+    ).toThrow(/unknown canonical competency/);
+    expect(() =>
+      db.prepare(
+        "INSERT INTO curriculum_scenarios (id, skill_id, title, domain_context, situation, constraints_json, question, options_json, invalidation_prompt, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("scenario-orphan", "missing-skill", "Orphan Scenario", "Test", "Invalid reference.", "[]", "Question?", "[]", "What invalidates it?", "draft", 1),
+    ).toThrow(/unknown canonical competency/);
+    expect(() =>
+      db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run("st-stocks"),
+    ).toThrow(/Competency is still referenced/);
+
     // Publish course -> now visible publicly with lesson navigation
     const pub = setCourseStatusDb(created.data!.id, "published", "author-1", db);
     expect(pub.error).toBeNull();
@@ -183,15 +223,19 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(getCourseBySlugDb("custom-systems-101", { includeDrafts: true, db })).toBeNull();
   });
 
-  it("rejects circular competency prerequisite graphs (DAG invariant)", () => {
-    const db = createTestDb();
-    expect(upsertCompetencyDb(makeValidCompetency("comp-a", []), db).error).toBeNull();
-    expect(upsertCompetencyDb(makeValidCompetency("comp-b", ["comp-a"]), db).error).toBeNull();
+  it("detects circular prerequisite graphs and dangling references", () => {
+    const cycles = detectCompetencyCycles([
+      { id: "comp-a", prerequisites: ["comp-b"] },
+      { id: "comp-b", prerequisites: ["comp-a"] },
+    ]);
+    expect(cycles).toHaveLength(1);
 
-    // Attempting to make comp-a depend on comp-b creates a cycle comp-a -> comp-b -> comp-a
-    const cyclic = upsertCompetencyDb(makeValidCompetency("comp-a", ["comp-b"]), db);
-    expect(cyclic.data).toBeNull();
-    expect(cyclic.errorCode).toBe("cycle_detected");
+    const dangling = validateCompetencyGraphReferences(
+      [{ id: "sd-reliability", prerequisites: [] }],
+      [{ id: "sd-reliability", prerequisites: ["missing-skill"] }],
+    );
+    expect(dangling).toHaveLength(1);
+    expect(dangling[0]).toContain("unknown prerequisite");
   });
 
   it("rejects lab rubrics whose criterion weights do not sum to 1.0 and scenarios without an optimal option", () => {
@@ -275,18 +319,53 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(badScenario.success).toBe(false);
   });
 
+  it("rejects unknown competency edges and keeps the canonical 16-skill model immutable", () => {
+    const db = createTestDb();
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((competency) => competency.id === "sd-reliability")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
+
+    const unsupported = upsertCompetencyDb(makeValidCompetency("sd-observability-slo"), db);
+    expect(unsupported.errorCode).toBe("validation_error");
+
+    const deletion = deleteCompetencyDb("sd-reliability", db);
+    expect(deletion.errorCode).toBe("conflict");
+  });
+
+  it("requires ordered Search, Know, Adapt, Proceed competency descriptors", () => {
+    const valid = makeValidCompetency("bad-stage-order");
+    const swapped = { ...valid, levelDescriptors: [valid.levelDescriptors[1], valid.levelDescriptors[0], valid.levelDescriptors[2], valid.levelDescriptors[3]] };
+    expect(competencyUpsertSchema.safeParse(swapped).success).toBe(false);
+  });
   it("imports and round-trip exports the official COURSE_BUNDLE_TEMPLATE.json atomically", () => {
     const db = createTestDb();
+    // The portable template references the starter sd-reliability competency.
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((c) => c.id === "sd-reliability")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
     const tplPath = path.resolve(process.cwd(), "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json");
     const raw = JSON.parse(fs.readFileSync(tplPath, "utf-8"));
     const parsed = courseBundleSchema.parse(raw);
+
+    const danglingBundle = {
+      ...parsed,
+      labs: [{ ...parsed.labs![0]!, skillId: "missing-skill" }],
+    };
+    const rejectedBundle = importCourseBundleDb(danglingBundle, "author-template", db);
+    expect(rejectedBundle.errorCode).toBe("validation_error");
+
+    const invalidLab = upsertLabDb(
+      { ...parsed.labs![0]!, skillId: "missing-skill" },
+      db,
+    );
+    expect(invalidLab.errorCode).toBe("validation_error");
 
     const imported = importCourseBundleDb(parsed, "author-template", db);
     expect(imported.error).toBeNull();
     expect(imported.data?.courseSlug).toBe("custom-distributed-observability");
     expect(imported.data?.moduleCount).toBe(1);
     expect(imported.data?.lessonCount).toBe(1);
-    expect(imported.data?.competencyCount).toBe(1);
+    expect(imported.data?.competencyCount).toBe(0);
     expect(imported.data?.labCount).toBe(1);
 
     const exported = exportCourseBundleDb("custom-distributed-observability", db);

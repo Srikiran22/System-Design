@@ -43,6 +43,15 @@ import { LABS, PATHS, SKILLS } from "./content";
 import { COMPETENCIES, INCOSE_CROSSWALK, ROLE_PROFILES, type RoleProfile } from "./competencies";
 import { CAPSTONE_PROJECT, LAB_RUBRICS, SCENARIOS, type ScenarioChallenge } from "./rubrics";
 import type { Block, Discipline, Lesson } from "./types";
+import {
+  CANONICAL_COMPETENCY_IDS,
+  findCompetencyReferences,
+  validateCanonicalCompetencyDefinition,
+  validateCompetencyGraphReferences,
+  validateCourseBundleReferences,
+  validateRoleProfileReferences,
+  validateSkillReferences,
+} from "./curriculum-integrity";
 import type { AuditLogRecord, PaginatedResult, UserRoleRecord } from "./db.server";
 
 /**
@@ -104,6 +113,57 @@ interface DynamicSupaQuery {
 
 function supaTable(client: SupabaseClient<Database>, table: string): DynamicSupaQuery {
   return (client as unknown as { from: (t: string) => DynamicSupaQuery }).from(table);
+}
+
+/**
+ * Seed the 16 canonical competency rows on the first authoring write.
+ * Reads may safely use bundled fallback data, but write paths must materialize
+ * the same IDs first because labs/scenarios have database-level foreign keys.
+ */
+async function ensureCanonicalCompetencyRows(
+  supabase: SupabaseClient<Database>,
+): Promise<string | null> {
+  const current = await supaTable(supabase, "curriculum_competencies").select("id");
+  if (current.error || !Array.isArray(current.data)) {
+    return "Cannot verify the canonical competency catalogue in Supabase. Check the managed curriculum schema.";
+  }
+
+  const existingIds = new Set(current.data.map((row) => String(row["id"])));
+  const blurbs = new Map(SKILLS.map((skill) => [skill.id, skill.blurb]));
+  const crosswalk = new Map(INCOSE_CROSSWALK.map((item) => [item.neetCompetencyId, item]));
+  const missing = COMPETENCIES.filter((competency) => !existingIds.has(competency.id)).map(
+    (competency) => {
+      const mapped = crosswalk.get(competency.id);
+      return {
+        id: competency.id,
+        code: competency.code,
+        domain: competency.domain,
+        title: competency.title,
+        blurb: blurbs.get(competency.id) ?? competency.definition.slice(0, 140),
+        definition: competency.definition,
+        bloom_target: competency.bloomTarget,
+        prerequisites_json: competency.prerequisites,
+        relations_json: competency.relations,
+        framework_anchors_json: competency.frameworkAnchors,
+        level_descriptors_json: competency.levelDescriptors,
+        mapped_volumes_json: competency.mappedVolumes,
+        role_tags_json: competency.roleTags,
+        crosswalk_json: mapped ? { neetCompetencyId: competency.id, ...mapped } : null,
+        version: competency.version,
+        sort_order: (COMPETENCIES.indexOf(competency) + 1) * 10,
+        updated_at: new Date().toISOString(),
+      };
+    },
+  );
+
+  if (missing.length === 0) return null;
+  const seeded = await supaTable(supabase, "curriculum_competencies").upsert(missing, {
+    onConflict: "id",
+  });
+  if (seeded.error) {
+    return "Cannot initialize the canonical competency catalogue: " + seeded.error.message;
+  }
+  return null;
 }
 
 /** Seed fallback converters (ONLY used if Supabase cloud curriculum tables are not yet provisioned). */
@@ -1004,6 +1064,13 @@ export const upsertLesson = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const referenceErrors = validateSkillReferences(
+        CANONICAL_COMPETENCY_IDS,
+        [{ source: "Lesson " + data.courseId + "/" + data.slug, skillIds: data.skillIds }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const id = data.id ?? `les-${data.courseId}-${data.slug}`;
       const res = await supaTable(context.supabase, "course_lessons").upsert(
         {
@@ -1088,7 +1155,17 @@ export const upsertCompetency = createServerFn({ method: "POST" })
         return res;
       }
 
+      const supportedErrors = validateCanonicalCompetencyDefinition(data);
+      if (supportedErrors.length > 0) {
+        return fail(supportedErrors.join(" "), "validation_error");
+      }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
       const current = await listCompetencies();
+      const referenceErrors = validateCompetencyGraphReferences(current.competencies, [data]);
+      if (referenceErrors.length > 0) {
+        return fail(referenceErrors.join(" "), "validation_error");
+      }
       const cycles = detectCompetencyCycles([
         ...current.competencies
           .filter((c) => c.id !== data.id)
@@ -1167,6 +1244,34 @@ export const deleteCompetency = createServerFn({ method: "POST" })
         });
         return res;
       }
+      if (CANONICAL_COMPETENCY_IDS.has(data.id)) {
+        return fail(
+          "Core competency " + data.id + " cannot be deleted; the learner model and scoring UI depend on the canonical 16-skill catalogue.",
+          "conflict",
+        );
+      }
+      const [current, courses, labs, scenarios, capstone, roleProfiles] = await Promise.all([
+        listCompetencies(),
+        listCourses({ data: { includeDrafts: true } }),
+        listLabs({ data: { includeDrafts: true } }),
+        listScenarios({ data: { includeDrafts: true } }),
+        getActiveCapstone(),
+        listRoleProfiles(),
+      ]);
+      const references = findCompetencyReferences(data.id, {
+        competencies: current.competencies,
+        courses: courses.courses,
+        labs: labs.labs,
+        scenarios: scenarios.scenarios,
+        capstone: capstone.capstone,
+        roleProfiles: roleProfiles.roleProfiles,
+      });
+      if (references.length > 0) {
+        return fail(
+          "Cannot delete competency " + data.id + "; it is still referenced by: " + references.join(", ") + ".",
+          "conflict",
+        );
+      }
       const res = await supaTable(context.supabase, "curriculum_competencies")
         .delete()
         .eq("id", data.id);
@@ -1193,6 +1298,13 @@ export const upsertLab = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const referenceErrors = validateSkillReferences(
+        CANONICAL_COMPETENCY_IDS,
+        [{ source: "Lab " + data.id, skillIds: [data.skillId] }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_labs").upsert(
         {
           id: data.id,
@@ -1265,6 +1377,13 @@ export const upsertScenario = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const referenceErrors = validateSkillReferences(
+        CANONICAL_COMPETENCY_IDS,
+        [{ source: "Scenario " + data.id, skillIds: [data.skillId] }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_scenarios").upsert(
         {
           id: data.id,
@@ -1340,6 +1459,16 @@ export const upsertCapstone = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const referenceErrors = validateSkillReferences(
+        CANONICAL_COMPETENCY_IDS,
+        data.milestones.map((milestone) => ({
+          source: "Capstone milestone " + milestone.id,
+          skillIds: milestone.skillIds,
+        })),
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_capstones").upsert(
         {
           id: data.id,
@@ -1376,6 +1505,14 @@ export const upsertRoleProfile = createServerFn({ method: "POST" })
         const cdb = await import("./curriculum-db.server");
         return cdb.upsertRoleProfileDb(data);
       }
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const referenceErrors = validateRoleProfileReferences(
+        CANONICAL_COMPETENCY_IDS,
+        data.requiredLevels,
+        "Role profile " + data.id,
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_role_profiles").upsert(
         {
           id: data.id,
@@ -1440,9 +1577,16 @@ export const importCourseBundle = createServerFn({ method: "POST" })
         return res;
       }
 
+      // Validate the complete bundle before the first cloud write.
+      const seedError = await ensureCanonicalCompetencyRows(context.supabase);
+      if (seedError) return fail(seedError, "internal_error");
+      const current = await listCompetencies();
+      const integrityErrors = validateCourseBundleReferences(data, current.competencies, CANONICAL_COMPETENCY_IDS);
+      if (integrityErrors.length > 0) {
+        return fail(integrityErrors.join(" "), "validation_error");
+      }
       // Cloud Supabase sequential upsert with DAG validation upfront
       if (data.competencies && data.competencies.length > 0) {
-        const current = await listCompetencies();
         const incomingIds = new Set(data.competencies.map((c) => c.id));
         const cycles = detectCompetencyCycles([
           ...current.competencies
@@ -1548,7 +1692,7 @@ export const importCourseBundle = createServerFn({ method: "POST" })
       }
 
       for (const lab of data.labs ?? []) {
-        await supaTable(context.supabase, "curriculum_labs").upsert(
+        const labUp = await supaTable(context.supabase, "curriculum_labs").upsert(
           {
             id: lab.id,
             discipline: lab.discipline,
@@ -1567,10 +1711,11 @@ export const importCourseBundle = createServerFn({ method: "POST" })
           },
           { onConflict: "id" },
         );
+        if (labUp.error) return fail("Failed importing lab " + lab.id + ".", "internal_error");
       }
 
       for (const scen of data.scenarios ?? []) {
-        await supaTable(context.supabase, "curriculum_scenarios").upsert(
+        const scenarioUp = await supaTable(context.supabase, "curriculum_scenarios").upsert(
           {
             id: scen.id,
             skill_id: scen.skillId,
@@ -1587,6 +1732,9 @@ export const importCourseBundle = createServerFn({ method: "POST" })
           },
           { onConflict: "id" },
         );
+        if (scenarioUp.error) {
+          return fail("Failed importing scenario " + scen.id + ".", "internal_error");
+        }
       }
 
       const summary = {
