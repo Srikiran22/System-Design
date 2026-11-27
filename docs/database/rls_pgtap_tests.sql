@@ -112,12 +112,12 @@ select is(
   'author can read draft courses'
 );
 select lives_ok(
-  $insert into public.courses (id, slug, discipline, title, tagline, level, status, artifact)
-    values ('course-author-ok', 'author-ok', 'engineering', 'Author Course', 'Dynamic', 'Advanced', 'draft', 'ADR')$,
+  $$insert into public.courses (id, slug, discipline, title, tagline, level, status, artifact)
+    values ('course-author-ok', 'author-ok', 'engineering', 'Author Course', 'Dynamic', 'Advanced', 'draft', 'ADR')$$,
   'author can create new dynamic courses'
 );
 
--- 9. JSON-backed lesson competency links prevent deleting a referenced competency
+-- 9. JSON-backed lesson competency links block deletion of a referenced competency.
 insert into public.curriculum_competencies
   (id, code, domain, title, blurb, definition, bloom_target, level_descriptors_json)
 values
@@ -132,13 +132,13 @@ values
   ('lesson-ref', 'module-ref', 'course-author-ok', 'reference-lesson', 'Reference Lesson', 'Lesson references competency', 10, '["ref-check"]'::jsonb, '[]'::jsonb, 'draft', 10);
 
 select throws_ok(
-  $delete from public.curriculum_competencies where id = 'ref-check'$,
+  $q$delete from public.curriculum_competencies where id = 'ref-check'$q$,
   '23503',
   'Competency ref-check is referenced by a course lesson.',
   'author cannot delete competency used by a lesson'
 );
 
--- 10. Scalar lab competency links are protected by a real PostgreSQL foreign key
+-- 10. Scalar lab competency links are protected by a real PostgreSQL foreign key.
 insert into public.curriculum_competencies
   (id, code, domain, title, blurb, definition, bloom_target, level_descriptors_json)
 values
@@ -150,7 +150,7 @@ values
   ('lab-ref-test', 'design', 'lab-ref', 'Lab FK Test', 'A lab for FK verification.', 10, '[]'::jsonb, 'A constraint change.', 'Test artifact.', 'lab', '{}'::jsonb, 'draft', 10);
 
 select throws_ok(
-  $delete from public.curriculum_competencies where id = 'lab-ref'$,
+  $q$delete from public.curriculum_competencies where id = 'lab-ref'$q$,
   '23503',
   null,
   'author cannot delete competency used by a lab'
