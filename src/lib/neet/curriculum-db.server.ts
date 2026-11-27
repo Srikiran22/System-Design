@@ -962,7 +962,7 @@ export function upsertLabDb(
   input: LabUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicLabRecord> {
-  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id).filter((id) => CANONICAL_COMPETENCY_IDS.has(id)));
   const referenceErrors = validateSkillReferences(knownCompetencyIds, [
     { source: "Lab " + input.id, skillIds: [input.skillId] },
   ]);
@@ -1059,7 +1059,7 @@ export function upsertScenarioDb(
   input: ScenarioUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<ScenarioChallenge> {
-  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id).filter((id) => CANONICAL_COMPETENCY_IDS.has(id)));
   const referenceErrors = validateSkillReferences(knownCompetencyIds, [
     { source: "Scenario " + input.id, skillIds: [input.skillId] },
   ]);
@@ -1156,7 +1156,7 @@ export function upsertCapstoneDb(
   input: CapstoneUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicCapstoneRecord> {
-  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id).filter((id) => CANONICAL_COMPETENCY_IDS.has(id)));
   const referenceErrors = validateSkillReferences(
     knownCompetencyIds,
     input.milestones.map((milestone) => ({
@@ -1223,7 +1223,7 @@ export function upsertRoleProfileDb(
   input: RoleProfileUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<RoleProfile> {
-  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id).filter((id) => CANONICAL_COMPETENCY_IDS.has(id)));
   const referenceErrors = validateRoleProfileReferences(
     knownCompetencyIds,
     input.requiredLevels,
