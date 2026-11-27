@@ -43,6 +43,13 @@ import { LABS, PATHS, SKILLS } from "./content";
 import { COMPETENCIES, INCOSE_CROSSWALK, ROLE_PROFILES, type RoleProfile } from "./competencies";
 import { CAPSTONE_PROJECT, LAB_RUBRICS, SCENARIOS, type ScenarioChallenge } from "./rubrics";
 import type { Block, Discipline, Lesson } from "./types";
+import {
+  findCompetencyReferences,
+  validateCompetencyGraphReferences,
+  validateCourseBundleReferences,
+  validateRoleProfileReferences,
+  validateSkillReferences,
+} from "./curriculum-integrity";
 import type { AuditLogRecord, PaginatedResult, UserRoleRecord } from "./db.server";
 
 /**
@@ -1004,6 +1011,12 @@ export const upsertLesson = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const current = await listCompetencies();
+      const referenceErrors = validateSkillReferences(
+        new Set(current.competencies.map((competency) => competency.id)),
+        [{ source: "Lesson " + data.courseId + "/" + data.slug, skillIds: data.skillIds }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const id = data.id ?? `les-${data.courseId}-${data.slug}`;
       const res = await supaTable(context.supabase, "course_lessons").upsert(
         {
@@ -1089,6 +1102,10 @@ export const upsertCompetency = createServerFn({ method: "POST" })
       }
 
       const current = await listCompetencies();
+      const referenceErrors = validateCompetencyGraphReferences(current.competencies, [data]);
+      if (referenceErrors.length > 0) {
+        return fail(referenceErrors.join(" "), "validation_error");
+      }
       const cycles = detectCompetencyCycles([
         ...current.competencies
           .filter((c) => c.id !== data.id)
@@ -1167,6 +1184,28 @@ export const deleteCompetency = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const [current, courses, labs, scenarios, capstone, roleProfiles] = await Promise.all([
+        listCompetencies(),
+        listCourses({ data: { includeDrafts: true } }),
+        listLabs({ data: { includeDrafts: true } }),
+        listScenarios({ data: { includeDrafts: true } }),
+        getActiveCapstone(),
+        listRoleProfiles(),
+      ]);
+      const references = findCompetencyReferences(data.id, {
+        competencies: current.competencies,
+        courses: courses.courses,
+        labs: labs.labs,
+        scenarios: scenarios.scenarios,
+        capstone: capstone.capstone,
+        roleProfiles: roleProfiles.roleProfiles,
+      });
+      if (references.length > 0) {
+        return fail(
+          "Cannot delete competency " + data.id + "; it is still referenced by: " + references.join(", ") + ".",
+          "conflict",
+        );
+      }
       const res = await supaTable(context.supabase, "curriculum_competencies")
         .delete()
         .eq("id", data.id);
@@ -1193,6 +1232,12 @@ export const upsertLab = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const current = await listCompetencies();
+      const referenceErrors = validateSkillReferences(
+        new Set(current.competencies.map((competency) => competency.id)),
+        [{ source: "Lab " + data.id, skillIds: [data.skillId] }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_labs").upsert(
         {
           id: data.id,
@@ -1265,6 +1310,12 @@ export const upsertScenario = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const current = await listCompetencies();
+      const referenceErrors = validateSkillReferences(
+        new Set(current.competencies.map((competency) => competency.id)),
+        [{ source: "Scenario " + data.id, skillIds: [data.skillId] }],
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_scenarios").upsert(
         {
           id: data.id,
@@ -1340,6 +1391,15 @@ export const upsertCapstone = createServerFn({ method: "POST" })
         });
         return res;
       }
+      const current = await listCompetencies();
+      const referenceErrors = validateSkillReferences(
+        new Set(current.competencies.map((competency) => competency.id)),
+        data.milestones.map((milestone) => ({
+          source: "Capstone milestone " + milestone.id,
+          skillIds: milestone.skillIds,
+        })),
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_capstones").upsert(
         {
           id: data.id,
@@ -1376,6 +1436,13 @@ export const upsertRoleProfile = createServerFn({ method: "POST" })
         const cdb = await import("./curriculum-db.server");
         return cdb.upsertRoleProfileDb(data);
       }
+      const current = await listCompetencies();
+      const referenceErrors = validateRoleProfileReferences(
+        new Set(current.competencies.map((competency) => competency.id)),
+        data.requiredLevels,
+        "Role profile " + data.id,
+      );
+      if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
       const res = await supaTable(context.supabase, "curriculum_role_profiles").upsert(
         {
           id: data.id,
@@ -1440,9 +1507,14 @@ export const importCourseBundle = createServerFn({ method: "POST" })
         return res;
       }
 
+      // Validate the complete bundle before the first cloud write.
+      const current = await listCompetencies();
+      const integrityErrors = validateCourseBundleReferences(data, current.competencies);
+      if (integrityErrors.length > 0) {
+        return fail(integrityErrors.join(" "), "validation_error");
+      }
       // Cloud Supabase sequential upsert with DAG validation upfront
       if (data.competencies && data.competencies.length > 0) {
-        const current = await listCompetencies();
         const incomingIds = new Set(data.competencies.map((c) => c.id));
         const cycles = detectCompetencyCycles([
           ...current.competencies
@@ -1548,7 +1620,7 @@ export const importCourseBundle = createServerFn({ method: "POST" })
       }
 
       for (const lab of data.labs ?? []) {
-        await supaTable(context.supabase, "curriculum_labs").upsert(
+        const labUp = await supaTable(context.supabase, "curriculum_labs").upsert(
           {
             id: lab.id,
             discipline: lab.discipline,
@@ -1567,10 +1639,11 @@ export const importCourseBundle = createServerFn({ method: "POST" })
           },
           { onConflict: "id" },
         );
+        if (labUp.error) return fail("Failed importing lab " + lab.id + ".", "internal_error");
       }
 
       for (const scen of data.scenarios ?? []) {
-        await supaTable(context.supabase, "curriculum_scenarios").upsert(
+        const scenarioUp = await supaTable(context.supabase, "curriculum_scenarios").upsert(
           {
             id: scen.id,
             skill_id: scen.skillId,
@@ -1587,6 +1660,9 @@ export const importCourseBundle = createServerFn({ method: "POST" })
           },
           { onConflict: "id" },
         );
+        if (scenarioUp.error) {
+          return fail("Failed importing scenario " + scen.id + ".", "internal_error");
+        }
       }
 
       const summary = {
