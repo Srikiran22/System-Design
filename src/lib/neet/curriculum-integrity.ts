@@ -1,4 +1,8 @@
 import type { CourseBundleInput } from "./curriculum-schemas";
+import { SKILLS } from "./content";
+
+/** The currently supported learner-scale vocabulary, kept in parity with the 16-skill UI. */
+export const CANONICAL_COMPETENCY_IDS = new Set(SKILLS.map((skill) => skill.id));
 
 export interface CompetencyGraphNode {
   id: string;
@@ -9,6 +13,18 @@ export interface CompetencyGraphNode {
 export interface CompetencySkillReference {
   source: string;
   skillIds: readonly string[];
+}
+
+export function validateSupportedCompetencyIds(
+  competencyIds: readonly string[],
+  supportedIds: ReadonlySet<string> = CANONICAL_COMPETENCY_IDS,
+  source = "Competency",
+): string[] {
+  return competencyIds
+    .filter((id) => !supportedIds.has(id))
+    .map((id) =>
+      source + ' "' + id + '" is outside the current canonical 16-competency learning model. Map the content to an existing competency or version the learner model and UI together.',
+    );
 }
 
 export interface CurriculumReferenceInventory {
@@ -105,9 +121,11 @@ export function validateRoleProfileReferences(
 export function validateCourseBundleReferences(
   bundle: CourseBundleInput,
   existingCompetencies: readonly CompetencyGraphNode[],
+  supportedIds: ReadonlySet<string> = CANONICAL_COMPETENCY_IDS,
 ): string[] {
   const incomingCompetencies = bundle.competencies ?? [];
   const errors = validateCompetencyGraphReferences(existingCompetencies, incomingCompetencies);
+  errors.push(...validateSupportedCompetencyIds(incomingCompetencies.map((c) => c.id), supportedIds));
   const knownIds = new Set([
     ...existingCompetencies.map((competency) => competency.id),
     ...incomingCompetencies.map((competency) => competency.id),
@@ -129,7 +147,7 @@ export function validateCourseBundleReferences(
     skillReferences.push({ source: `Scenario "${scenario.id}"`, skillIds: [scenario.skillId] });
   }
 
-  errors.push(...validateSkillReferences(knownIds, skillReferences));
+  errors.push(...validateSkillReferences(supportedIds, skillReferences));
   return [...new Set(errors)];
 }
 
