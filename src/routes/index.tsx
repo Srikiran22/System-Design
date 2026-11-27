@@ -19,13 +19,13 @@ export const Route = createFileRoute("/")({
   loader: async () => listCourses({ data: {} }),
   head: () => ({
     meta: [
-      { title: "NEET — Learn by building" },
+      { title: "NEET" },
       {
         name: "description",
         content:
-          "A hands-on, self-directed curriculum for building real distributed systems, engineering trade-offs, and production-ready artifacts.",
+          "Study systems through lessons, exercises, and practical projects.",
       },
-      { property: "og:title", content: "NEET — Learn by building" },
+      { property: "og:title", content: "NEET" },
       {
         property: "og:description",
         content:
