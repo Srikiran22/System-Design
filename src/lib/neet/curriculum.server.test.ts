@@ -307,6 +307,8 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(upsertCompetencyDb(makeValidCompetency("comp-child", ["comp-parent"]), db).error).toBeNull();
     const deletion = deleteCompetencyDb("comp-parent", db);
     expect(deletion.errorCode).toBe("conflict");
+    expect(() => db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run("comp-parent"))
+      .toThrow(/Competency is still referenced/);
   });
 
   it("requires ordered Search, Know, Adapt, Proceed competency descriptors", () => {
@@ -323,6 +325,19 @@ describe("dynamic database-backed curriculum engine", () => {
     const tplPath = path.resolve(process.cwd(), "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json");
     const raw = JSON.parse(fs.readFileSync(tplPath, "utf-8"));
     const parsed = courseBundleSchema.parse(raw);
+
+    const danglingBundle = {
+      ...parsed,
+      labs: [{ ...parsed.labs![0]!, skillId: "missing-skill" }],
+    };
+    const rejectedBundle = importCourseBundleDb(danglingBundle, "author-template", db);
+    expect(rejectedBundle.errorCode).toBe("validation_error");
+
+    const invalidLab = upsertLabDb(
+      { ...parsed.labs![0]!, skillId: "missing-skill" },
+      db,
+    );
+    expect(invalidLab.errorCode).toBe("validation_error");
 
     const imported = importCourseBundleDb(parsed, "author-template", db);
     expect(imported.error).toBeNull();
