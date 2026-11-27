@@ -5,7 +5,7 @@
 - **Production / Cloud (`SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY` set)**:
   - All account reads and mutations (`profiles`, `learning_goals`, `progress_events`) execute exclusively against Supabase PostgreSQL under owner-only RLS.
   - Silent fallbacks to local SQLite and dual-writes in production are eliminated.
-- **Local Development / CI (`node:sqlite`, `data/neet.db`)**:
+- **Local Development / CI (`node:sqlite`, `.data/system_design.sqlite` by default; server-only `SQLITE_DB_PATH` override)**:
   - Mirrors knowledge pack tables plus account tables (`profiles`, `learning_goals`, `progress_events`) and extended persistence tables (`local_auth_users`, `learner_evidence`, `learner_state_snapshots`).
 
 ## 2. Client-to-Server Sync Architecture
