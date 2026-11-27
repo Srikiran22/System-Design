@@ -127,55 +127,61 @@ export const moduleUpsertSchema = z.object({
 });
 export type ModuleUpsertInput = z.infer<typeof moduleUpsertSchema>;
 
-export const lessonUpsertSchema = z
-  .object({
-    id: z.string().trim().min(1).max(100).optional(),
-    courseId: z.string().trim().min(1).max(100),
-    moduleId: z.string().trim().min(1).max(100),
-    slug: z
-      .string()
-      .trim()
-      .min(2)
-      .max(120)
-      .regex(SLUG_RE, "Lesson slug must be lowercase kebab-case"),
-    title: z.string().trim().min(2).max(200),
-    summary: z.string().trim().min(2).max(600),
-    minutes: z.number().int().min(1).max(600),
-    skillIds: z
-      .array(
-        z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
-      )
-      .min(1)
-      .max(10),
-    blocks: z.array(lessonBlockSchema).min(1).max(120),
-    keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
-    status: publishStatusSchema.default("published"),
-    sortOrder: z.number().int().min(0).max(10_000).default(0),
-  })
-  .superRefine((lesson, ctx) => {
-    const skillIds = new Set(lesson.skillIds);
-    const seenSkillIds = new Set<string>();
-    lesson.skillIds.forEach((skillId, index) => {
-      if (seenSkillIds.has(skillId)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["skillIds", index],
-          message: "A lesson may map each competency only once.",
-        });
-      }
-      seenSkillIds.add(skillId);
-    });
+const lessonUpsertObjectSchema = z.object({
+  id: z.string().trim().min(1).max(100).optional(),
+  courseId: z.string().trim().min(1).max(100),
+  moduleId: z.string().trim().min(1).max(100),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(120)
+    .regex(SLUG_RE, "Lesson slug must be lowercase kebab-case"),
+  title: z.string().trim().min(2).max(200),
+  summary: z.string().trim().min(2).max(600),
+  minutes: z.number().int().min(1).max(600),
+  skillIds: z
+    .array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"))
+    .min(1)
+    .max(10),
+  blocks: z.array(lessonBlockSchema).min(1).max(120),
+  keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
+  status: publishStatusSchema.default("published"),
+  sortOrder: z.number().int().min(0).max(10_000).default(0),
+});
 
-    lesson.blocks.forEach((block, index) => {
-      if (block.t === "pause" && !skillIds.has(block.skillId)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["blocks", index, "skillId"],
-          message: "Pause checks must map to a competency declared in the lesson skillIds.",
-        });
-      }
-    });
+function addLessonCompetencyIssues(
+  skillIds: string[],
+  blocks: Block[],
+  ctx: z.RefinementCtx,
+) {
+  const knownSkills = new Set(skillIds);
+  const seenSkills = new Set<string>();
+  skillIds.forEach((skillId, index) => {
+    if (seenSkills.has(skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skillIds", index],
+        message: "A lesson may map each competency only once.",
+      });
+    }
+    seenSkills.add(skillId);
   });
+
+  blocks.forEach((block, index) => {
+    if (block.t === "pause" && !knownSkills.has(block.skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blocks", index, "skillId"],
+        message: "Pause checks must map to a competency declared in the lesson skillIds.",
+      });
+    }
+  });
+}
+
+export const lessonUpsertSchema = lessonUpsertObjectSchema.superRefine((lesson, ctx) => {
+  addLessonCompetencyIssues(lesson.skillIds, lesson.blocks, ctx);
+});
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
 export const rubricCriterionSchema = z.object({
@@ -481,7 +487,13 @@ export const courseBundleSchema = z
           summary: z.string().trim().max(600).default(""),
           sortOrder: z.number().int().min(0).max(10_000).optional(),
           lessons: z
-            .array(lessonUpsertSchema.omit({ courseId: true, moduleId: true }))
+            .array(
+              lessonUpsertObjectSchema
+                .omit({ courseId: true, moduleId: true })
+                .superRefine((lesson, ctx) => {
+                  addLessonCompetencyIssues(lesson.skillIds, lesson.blocks, ctx);
+                }),
+            )
             .min(1)
             .max(50),
         }),
