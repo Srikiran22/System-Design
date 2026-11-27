@@ -610,6 +610,34 @@ export function initTablesSync(db: DatabaseSync): void {
 
     -- Keep reference integrity enforced even for existing SQLite files whose
     -- CREATE TABLE statements cannot retrofit the new scalar foreign keys.
+    CREATE TRIGGER IF NOT EXISTS curriculum_labs_skill_insert
+    BEFORE INSERT ON curriculum_labs
+    WHEN NOT EXISTS (SELECT 1 FROM curriculum_competencies WHERE id = NEW.skill_id)
+    BEGIN
+      SELECT RAISE(ABORT, 'Lab references an unknown canonical competency.');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS curriculum_labs_skill_update
+    BEFORE UPDATE OF skill_id ON curriculum_labs
+    WHEN NOT EXISTS (SELECT 1 FROM curriculum_competencies WHERE id = NEW.skill_id)
+    BEGIN
+      SELECT RAISE(ABORT, 'Lab references an unknown canonical competency.');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS curriculum_scenarios_skill_insert
+    BEFORE INSERT ON curriculum_scenarios
+    WHEN NOT EXISTS (SELECT 1 FROM curriculum_competencies WHERE id = NEW.skill_id)
+    BEGIN
+      SELECT RAISE(ABORT, 'Scenario references an unknown canonical competency.');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS curriculum_scenarios_skill_update
+    BEFORE UPDATE OF skill_id ON curriculum_scenarios
+    WHEN NOT EXISTS (SELECT 1 FROM curriculum_competencies WHERE id = NEW.skill_id)
+    BEGIN
+      SELECT RAISE(ABORT, 'Scenario references an unknown canonical competency.');
+    END;
+
     CREATE TRIGGER IF NOT EXISTS curriculum_competency_prevent_referenced_delete
     BEFORE DELETE ON curriculum_competencies
     WHEN
