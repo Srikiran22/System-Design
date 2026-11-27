@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { initTablesSync } from "./db.server";
 import {
+  deleteCompetencyDb,
   deleteCourseDb,
   exportCourseBundleDb,
   getCourseBySlugDb,
@@ -20,8 +21,9 @@ import {
   upsertLabDb,
   upsertLessonDb,
   upsertModuleDb,
+  upsertScenarioDb,
 } from "./curriculum-db.server";
-import { courseBundleSchema, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import { competencyUpsertSchema, courseBundleSchema, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
 
 function createTestDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -144,6 +146,28 @@ describe("dynamic database-backed curriculum engine", () => {
       db,
     );
     expect(mod.error).toBeNull();
+
+    const missingSkillLesson = upsertLessonDb(
+      {
+        courseId: created.data!.id,
+        moduleId: mod.data!.id,
+        slug: "missing-skill",
+        title: "Missing Skill",
+        summary: "This mapping must fail.",
+        minutes: 10,
+        skillIds: ["missing-skill"],
+        blocks: [{ t: "p", text: "This should not be stored." }],
+        keep: [],
+        status: "published",
+        sortOrder: 5,
+      },
+      "author-1",
+      db,
+    );
+    expect(missingSkillLesson.errorCode).toBe("validation_error");
+
+    const competency = upsertCompetencyDb(makeValidCompetency("st-stocks"), db);
+    expect(competency.error).toBeNull();
 
     const les = upsertLessonDb(
       {
@@ -275,8 +299,28 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(badScenario.success).toBe(false);
   });
 
+  it("rejects unknown competency edges and blocks deletion of a referenced competency", () => {
+    const db = createTestDb();
+    const bad = upsertCompetencyDb(makeValidCompetency("bad-edge", ["missing-skill"]), db);
+    expect(bad.errorCode).toBe("validation_error");
+
+    expect(upsertCompetencyDb(makeValidCompetency("comp-parent"), db).error).toBeNull();
+    expect(upsertCompetencyDb(makeValidCompetency("comp-child", ["comp-parent"]), db).error).toBeNull();
+    const deletion = deleteCompetencyDb("comp-parent", db);
+    expect(deletion.errorCode).toBe("conflict");
+  });
+
+  it("requires ordered Search, Know, Adapt, Proceed competency descriptors", () => {
+    const valid = makeValidCompetency("bad-stage-order");
+    const swapped = { ...valid, levelDescriptors: [valid.levelDescriptors[1], valid.levelDescriptors[0], valid.levelDescriptors[2], valid.levelDescriptors[3]] };
+    expect(competencyUpsertSchema.safeParse(swapped).success).toBe(false);
+  });
   it("imports and round-trip exports the official COURSE_BUNDLE_TEMPLATE.json atomically", () => {
     const db = createTestDb();
+    // The portable template references the starter sd-reliability competency.
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((c) => c.id === "sd-reliability")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
     const tplPath = path.resolve(process.cwd(), "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json");
     const raw = JSON.parse(fs.readFileSync(tplPath, "utf-8"));
     const parsed = courseBundleSchema.parse(raw);
