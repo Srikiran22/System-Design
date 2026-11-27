@@ -190,6 +190,21 @@ describe("dynamic database-backed curriculum engine", () => {
     );
     expect(les.error).toBeNull();
 
+    // Storage-level checks protect existing rows even when a caller bypasses the service layer.
+    expect(() =>
+      db.prepare(
+        "INSERT INTO curriculum_labs (id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("lab-orphan", "design", "missing-skill", "Orphan Lab", "Invalid skill reference.", 10, "[]", "Constraint twist.", "Artifact", "lab", "{}", "draft", 1),
+    ).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() =>
+      db.prepare(
+        "INSERT INTO curriculum_scenarios (id, skill_id, title, domain_context, situation, constraints_json, question, options_json, invalidation_prompt, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run("scenario-orphan", "missing-skill", "Orphan Scenario", "Test", "Invalid reference.", "[]", "Question?", "[]", "What invalidates it?", "draft", 1),
+    ).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() =>
+      db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run("st-stocks"),
+    ).toThrow(/Competency is still referenced/);
+
     // Publish course -> now visible publicly with lesson navigation
     const pub = setCourseStatusDb(created.data!.id, "published", "author-1", db);
     expect(pub.error).toBeNull();
