@@ -151,56 +151,36 @@ const lessonUpsertFieldsSchema = z.object({
   status: publishStatusSchema.default("published"),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
-type LessonReferenceInput = Pick<
-  z.infer<typeof lessonUpsertFieldsSchema>,
-  "skillIds" | "blocks"
->;
+type LessonReferenceInput = Pick<z.infer<typeof lessonUpsertFieldsSchema>, "skillIds" | "blocks">;
+type LessonRefinementContext = Parameters<
+  Parameters<typeof lessonUpsertFieldsSchema.superRefine>[0]
+>[1];
 
-interface LessonReferenceIssue {
-  path: (string | number)[];
-  message: string;
-}
-
-function collectLessonReferenceIssues(lesson: LessonReferenceInput): LessonReferenceIssue[] {
-  const issues: LessonReferenceIssue[] = [];
-  const knownSkills = new Set(lesson.skillIds);
-  const seenSkills = new Set<string>();
-
+const validateLessonReferences = (lesson: LessonReferenceInput, ctx: LessonRefinementContext) => {
+  const skillIds = new Set(lesson.skillIds);
+  const seenSkillIds = new Set<string>();
   lesson.skillIds.forEach((skillId, index) => {
-    if (seenSkills.has(skillId)) {
-      issues.push({
+    if (seenSkillIds.has(skillId)) {
+      ctx.addIssue({
+        code: "custom",
         path: ["skillIds", index],
         message: "A lesson may map each competency only once.",
       });
     }
-    seenSkills.add(skillId);
+    seenSkillIds.add(skillId);
   });
 
   lesson.blocks.forEach((block, index) => {
-    if (block.t === "pause" && !knownSkills.has(block.skillId)) {
-      issues.push({
+    if (block.t === "pause" && !skillIds.has(block.skillId)) {
+      ctx.addIssue({
+        code: "custom",
         path: ["blocks", index, "skillId"],
         message: "Pause checks must map to a competency declared in the lesson skillIds.",
       });
     }
   });
-
-  return issues;
-}
-
-const lessonBundleSchema = lessonUpsertFieldsSchema
-  .omit({ courseId: true, moduleId: true })
-  .superRefine((lesson, ctx) => {
-    for (const issue of collectLessonReferenceIssues(lesson)) {
-      ctx.addIssue({ code: "custom", ...issue });
-    }
-  });
-
-export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine((lesson, ctx) => {
-  for (const issue of collectLessonReferenceIssues(lesson)) {
-    ctx.addIssue({ code: "custom", ...issue });
-  }
-});
+};
+export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine(validateLessonReferences);
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
 export const rubricCriterionSchema = z.object({
@@ -506,11 +486,7 @@ export const courseBundleSchema = z
           summary: z.string().trim().max(600).default(""),
           sortOrder: z.number().int().min(0).max(10_000).optional(),
           lessons: z
-            .array(
-              lessonUpsertFieldsSchema
-                .omit({ courseId: true, moduleId: true })
-                .superRefine(validateLessonReferences),
-            )
+            .array(lessonUpsertFieldsSchema.omit({ courseId: true, moduleId: true }))
             .min(1)
             .max(50),
         }),
@@ -522,6 +498,40 @@ export const courseBundleSchema = z
     scenarios: z.array(scenarioUpsertSchema).max(50).optional(),
   })
   .superRefine((bundle, ctx) => {
+    bundle.modules.forEach((module, moduleIndex) => {
+      module.lessons.forEach((lesson, lessonIndex) => {
+        const skillIds = new Set<string>();
+        lesson.skillIds.forEach((skillId, skillIndex) => {
+          if (skillIds.has(skillId)) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["modules", moduleIndex, "lessons", lessonIndex, "skillIds", skillIndex],
+              message: "A lesson may map each competency only once.",
+            });
+          }
+          skillIds.add(skillId);
+        });
+
+        lesson.blocks.forEach((block, blockIndex) => {
+          if (block.t === "pause" && !skillIds.has(block.skillId)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [
+                "modules",
+                moduleIndex,
+                "lessons",
+                lessonIndex,
+                "blocks",
+                blockIndex,
+                "skillId",
+              ],
+              message: "Pause checks must map to a competency declared in the lesson skillIds.",
+            });
+          }
+        });
+      });
+    });
+
     const checkUnique = (
       values: Array<{ value: string; path: (string | number)[] }>,
       label: string,
