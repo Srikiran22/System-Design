@@ -682,10 +682,10 @@ export function upsertLessonDb(
     if (!mod) return fail("Target module does not belong to course.", "not_found");
 
     const knownCompetencyIds = new Set(
-      listCompetenciesDb(db)
-        .map((competency) => competency.id)
-        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-    );
+    listCompetenciesDb(db)
+      .map((competency) => competency.id)
+      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+  );
     const referenceErrors = validateSkillReferences(knownCompetencyIds, [
       { source: "Lesson " + input.courseId + "/" + input.slug, skillIds: input.skillIds },
     ]);
@@ -1016,10 +1016,10 @@ export function upsertLabDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicLabRecord> {
   const knownCompetencyIds = new Set(
-      listCompetenciesDb(db)
-        .map((competency) => competency.id)
-        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-    );
+    listCompetenciesDb(db)
+      .map((competency) => competency.id)
+      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+  );
   const referenceErrors = validateSkillReferences(knownCompetencyIds, [
     { source: "Lab " + input.id, skillIds: [input.skillId] },
   ]);
@@ -1117,10 +1117,10 @@ export function upsertScenarioDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<ScenarioChallenge> {
   const knownCompetencyIds = new Set(
-      listCompetenciesDb(db)
-        .map((competency) => competency.id)
-        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-    );
+    listCompetenciesDb(db)
+      .map((competency) => competency.id)
+      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+  );
   const referenceErrors = validateSkillReferences(knownCompetencyIds, [
     { source: "Scenario " + input.id, skillIds: [input.skillId] },
   ]);
@@ -1218,10 +1218,10 @@ export function upsertCapstoneDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicCapstoneRecord> {
   const knownCompetencyIds = new Set(
-      listCompetenciesDb(db)
-        .map((competency) => competency.id)
-        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-    );
+    listCompetenciesDb(db)
+      .map((competency) => competency.id)
+      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+  );
   const referenceErrors = validateSkillReferences(
     knownCompetencyIds,
     input.milestones.map((milestone) => ({
@@ -1289,10 +1289,10 @@ export function upsertRoleProfileDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<RoleProfile> {
   const knownCompetencyIds = new Set(
-      listCompetenciesDb(db)
-        .map((competency) => competency.id)
-        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-    );
+    listCompetenciesDb(db)
+      .map((competency) => competency.id)
+      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+  );
   const referenceErrors = validateRoleProfileReferences(
     knownCompetencyIds,
     input.requiredLevels,
