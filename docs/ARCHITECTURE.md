@@ -8,7 +8,7 @@ NEET is an early-stage learning project focused on systems thinking, system desi
 
 - **Frontend / SSR**: React 19, TypeScript 5.8 (`exactOptionalPropertyTypes: true`), TanStack Start + TanStack Router (file-based routes), TanStack Query v5, Tailwind CSS v4, Radix UI primitives.
 - **Canonical Production Data Store & Auth**: Supabase PostgreSQL (owner-only RLS on user tables; public read-only RLS on knowledge pack tables) + Supabase Auth (`JWT` verified server-side via `supabase.auth.getUser()`).
-- **Local Dev / Test Data Store & Auth**: Synchronous `node:sqlite` (`data/neet.db`, WAL mode) with server-side salted `scrypt` password hashing and `HttpOnly` HMAC-SHA256 session cookies (`iss: "neet-local-dev"`).
+- **Local Dev / Test Data Store & Auth**: Synchronous `node:sqlite` (`.data/system_design.sqlite` by default, WAL mode; overridable with server-only `SQLITE_DB_PATH`) with server-side salted `scrypt` password hashing and `HttpOnly` HMAC-SHA256 session cookies (`iss: "neet-local-dev"`).
 
 ## 3. Trust Boundaries & Security Architecture
 
