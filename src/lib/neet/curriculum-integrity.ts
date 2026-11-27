@@ -191,7 +191,12 @@ export function validateCourseBundleReferences(
 ): string[] {
   const incomingCompetencies = bundle.competencies ?? [];
   const errors = validateCompetencyGraphReferences(existingCompetencies, incomingCompetencies);
-  errors.push(...validateSupportedCompetencyIds(incomingCompetencies.map((c) => c.id), supportedIds));
+  errors.push(
+    ...validateSupportedCompetencyIds(
+      incomingCompetencies.map((competency) => competency.id),
+      supportedIds,
+    ),
+  );
   for (const competency of incomingCompetencies) {
     errors.push(...validateCanonicalCompetencyDefinition(competency));
   }
