@@ -19,56 +19,6 @@
     "artifact": "A production observability design doc + SLO burn-rate specification for a multi-service checkout path.",
     "sortOrder": 200
   },
-  "competencies": [
-    {
-      "id": "sd-observability-slo",
-      "code": "SE-SD-07",
-      "domain": "design",
-      "title": "Observability & SLO Telemetry",
-      "blurb": "Design bounded-cardinality metrics, correlated traces, and error-budget burn alerts.",
-      "definition": "Architect operational telemetry pipelines that expose leading indicators of degradation without introducing unbounded cardinality or PII leakage.",
-      "bloomTarget": "evaluate",
-      "prerequisites": ["sd-reliability"],
-      "relations": [{ "targetId": "sd-reliability", "kind": "assumes" }],
-      "frameworkAnchors": [
-        {
-          "framework": "ISO/IEC/IEEE",
-          "reference": "ISO/IEC/IEEE 15288 · Measurement & Operation",
-          "note": "Continuous technical performance measurement and operational monitoring."
-        }
-      ],
-      "levelDescriptors": [
-        {
-          "level": 1,
-          "stage": "Search",
-          "observableOutcome": "Distinguish SLIs, SLOs, and SLAs and identify unbounded label cardinality hazards.",
-          "requiredEvidence": ["quiz"]
-        },
-        {
-          "level": 2,
-          "stage": "Know",
-          "observableOutcome": "Explain why multi-window error-budget burn alerts outperform static threshold alerts.",
-          "requiredEvidence": ["quiz", "explain"]
-        },
-        {
-          "level": 3,
-          "stage": "Adapt",
-          "observableOutcome": "Design a redacted telemetry pipeline with latency histograms and request correlation.",
-          "requiredEvidence": ["lab"]
-        },
-        {
-          "level": 4,
-          "stage": "Proceed",
-          "observableOutcome": "Ship a complete observability & runbook specification validated against overload scenarios.",
-          "requiredEvidence": ["artifact"]
-        }
-      ],
-      "mappedVolumes": ["10-operations-observability-and-delivery", "100-operational-reliability-objectives-sli-slo-error-budgets-and-mission-metrics"],
-      "roleTags": ["SRE", "Systems Architect"],
-      "version": "2.0.0",
-      "sortOrder": 200
-    }
-  ],
   "modules": [
     {
       "slug": "telemetry-foundations",
@@ -81,7 +31,9 @@
           "title": "Bounded Cardinality & Secret Redaction",
           "summary": "Why putting user IDs in Prometheus labels takes down monitoring during incidents.",
           "minutes": 12,
-          "skillIds": ["sd-observability-slo"],
+          "skillIds": [
+            "sd-reliability"
+          ],
           "status": "published",
           "sortOrder": 10,
           "keep": [
@@ -89,7 +41,10 @@
             "Put high-cardinality correlation IDs in structured logs and traces with automatic PII redaction."
           ],
           "blocks": [
-            { "t": "h2", "text": "The Cardinality Trap" },
+            {
+              "t": "h2",
+              "text": "The Cardinality Trap"
+            },
             {
               "t": "p",
               "text": "Every unique combination of metric label values creates a distinct time series in memory. Putting a user ID or raw URL path into a metric label multiplies memory usage linearly with traffic—meaning your monitoring fails right when an incident spikes."
@@ -103,7 +58,7 @@
             {
               "t": "pause",
               "id": "pause-obs-cardinality-1",
-              "skillId": "sd-observability-slo",
+              "skillId": "sd-reliability",
               "q": "Which label is safe to attach to an HTTP request latency histogram metric?",
               "options": [
                 "The raw user email address",
@@ -123,7 +78,7 @@
     {
       "id": "lab-slo-burn-design",
       "discipline": "design",
-      "skillId": "sd-observability-slo",
+      "skillId": "sd-reliability",
       "title": "Multi-Window SLO Burn Alert & Redaction Design",
       "brief": "Define SLIs, a 30-day error budget, multi-window burn-rate alerts, and a log-redaction policy for a user-facing API.",
       "minutes": 35,
@@ -150,7 +105,9 @@
             "weight": 0.4,
             "rationale": "Ambiguous SLI definitions produce noisy alerts and broken error budgets.",
             "evidenceRequired": "Exact numerator/denominator formula plus worked 30-day downtime budget.",
-            "typicalFailureModes": ["Counting 4xx client errors as server availability failures"],
+            "typicalFailureModes": [
+              "Counting 4xx client errors as server availability failures"
+            ],
             "descriptors": {
               "1": "SLI or error budget omitted or incorrect.",
               "2": "SLI stated informally without exact numerator/denominator or budget math.",
@@ -165,7 +122,9 @@
             "weight": 0.35,
             "rationale": "Single-window thresholds either alert too slowly or page on brief blips.",
             "evidenceRequired": "Fast and slow burn windows with explicit page vs. ticket routing.",
-            "typicalFailureModes": ["Paging on 1-minute CPU spikes instead of user-visible error burn"],
+            "typicalFailureModes": [
+              "Paging on 1-minute CPU spikes instead of user-visible error burn"
+            ],
             "descriptors": {
               "1": "Only static host CPU/memory alerts provided.",
               "2": "Burn rate mentioned without short/long confirmation windows.",
@@ -180,7 +139,9 @@
             "weight": 0.25,
             "rationale": "Logs leaking tokens or unbounded metric labels create security and outage incidents.",
             "evidenceRequired": "Redaction denylist and explicit low-cardinality metric label schema.",
-            "typicalFailureModes": ["Logging Authorization headers or raw emails"],
+            "typicalFailureModes": [
+              "Logging Authorization headers or raw emails"
+            ],
             "descriptors": {
               "1": "Redaction and cardinality constraints omitted.",
               "2": "General mention of privacy without concrete fields or label bounds.",
