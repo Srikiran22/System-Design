@@ -35,7 +35,7 @@ The main navigation exposes Courses, Library, Exercises, Projects, and Progress.
 | Course detail | `/paths/:slug` | Review outcomes, roadmap, skills, and target artifact | Public |
 | Lesson | `/learn/:path/:lesson` | Read lesson material, complete checks, and record learning progress | Sign-in required |
 | Design exercises | `/exercises` | Browse searchable, competency-mapped practice prompts | Public |
-| Projects | `/labs` | Work through labs, engineering scenarios, and the capstone | Public overview; progress is account-scoped |
+| Projects | `/labs` | Work through labs, engineering scenarios, and the capstone | Public overview; guest progress is local and signed-in progress syncs to the account |
 | Knowledge library | `/library` | Search and browse the research-backed article collection | Public |
 | Article | `/library/:slug` | Read a volume, its explicit citations, and separately labelled related reading | Public |
 | Source register | `/sources` | Inspect source authority, provenance, freshness, and limitations | Public |
@@ -55,7 +55,7 @@ Lessons and personal learner pages are protected by the authenticated route grou
 
 The curriculum model is:
 
-`Course → Competencies → Modules → Lessons → Lesson blocks`
+`Course + mapped competencies → Modules → Lessons → Lesson blocks`
 
 - A **course** has a discipline, level, description, learning outcomes, and a target artifact.
 - **Competencies** describe observable skills, prerequisites, relationships, and progression descriptors.
