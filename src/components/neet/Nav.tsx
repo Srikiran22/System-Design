@@ -5,11 +5,11 @@ import ProfileMenu from "./ProfileCard";
 import { useSession } from "@/hooks/use-session";
 
 const LINKS = [
-  { href: "/paths", label: "Curriculum" },
-  { href: "/library", label: "Resources" },
+  { href: "/paths", label: "Courses" },
+  { href: "/library", label: "Library" },
   { href: "/exercises", label: "Exercises" },
-  { href: "/labs", label: "Labs & Projects" },
-  { href: "/me", label: "Analytics" },
+  { href: "/labs", label: "Projects" },
+  { href: "/me", label: "Progress" },
 ];
 
 export default function Nav() {
@@ -28,10 +28,10 @@ export default function Nav() {
             onClick={() => setOpen(false)}
           >
             <span className="flex h-8 w-8 items-center justify-center rounded bg-accent font-display text-xs font-bold text-bg">
-              S
+              N
             </span>
             <span className="font-display text-lg font-bold tracking-tight text-text">
-              From Scratch
+              NEET
             </span>
           </Link>
 
