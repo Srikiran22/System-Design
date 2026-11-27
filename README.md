@@ -1,7 +1,5 @@
 # NEET
 
-
-
 NEET is an early-stage learning project focused on systems thinking, system design, and practical engineering. This repository contains course material, exercises, projects, and a source-backed knowledge pack.
 
 ## Tech Stack
