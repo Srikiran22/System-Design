@@ -132,7 +132,7 @@ async function ensureCanonicalCompetencyRows(
   const blurbs = new Map(SKILLS.map((skill) => [skill.id, skill.blurb]));
   const crosswalk = new Map(INCOSE_CROSSWALK.map((item) => [item.neetCompetencyId, item]));
   const missing = COMPETENCIES.filter((competency) => !existingIds.has(competency.id)).map(
-    (competency, index) => {
+    (competency) => {
       const mapped = crosswalk.get(competency.id);
       return {
         id: competency.id,
@@ -150,7 +150,7 @@ async function ensureCanonicalCompetencyRows(
         role_tags_json: competency.roleTags,
         crosswalk_json: mapped ? { neetCompetencyId: competency.id, ...mapped } : null,
         version: competency.version,
-        sort_order: (index + 1) * 10,
+        sort_order: (COMPETENCIES.indexOf(competency) + 1) * 10,
         updated_at: new Date().toISOString(),
       };
     },
