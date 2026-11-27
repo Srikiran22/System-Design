@@ -22,10 +22,6 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-      - name: Regenerate lockfile for dependency update verification
-        run: |
-          npm install --package-lock-only --ignore-scripts
-          git diff --no-ext-diff -- package-lock.json
       - run: npm ci
       - name: Format check
         run: npx prettier --check src scripts
@@ -45,4 +41,3 @@ jobs:
         run: npm run smoke
       - name: Dependency vulnerability audit (high/critical)
         run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
