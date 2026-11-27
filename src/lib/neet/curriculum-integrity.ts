@@ -1,5 +1,6 @@
-import type { CourseBundleInput } from "./curriculum-schemas";
+import type { CompetencyUpsertInput, CourseBundleInput } from "./curriculum-schemas";
 import { SKILLS } from "./content";
+import { COMPETENCIES, INCOSE_CROSSWALK } from "./competencies";
 
 /** The currently supported learner-scale vocabulary, kept in parity with the 16-skill UI. */
 export const CANONICAL_COMPETENCY_IDS = new Set(SKILLS.map((skill) => skill.id));
@@ -24,6 +25,66 @@ export function validateSupportedCompetencyIds(
     .filter((id) => !supportedIds.has(id))
     .map((id) =>
       source + ' "' + id + '" is outside the current canonical 16-competency learning model. Map the content to an existing competency or version the learner model and UI together.',
+    );
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return (
+      "{" +
+      Object.keys(record)
+        .sort()
+        .map((key) => JSON.stringify(key) + ":" + stableJson(record[key]))
+        .join(",") +
+      "}"
+    );
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * The current learner map and Proceed Scale are compiled against the versioned
+ * 16-item catalogue. CMS writes may materialize that catalogue, but may not
+ * silently redefine it in the database.
+ */
+export function validateCanonicalCompetencyDefinition(
+  input: CompetencyUpsertInput,
+): string[] {
+  const expected = COMPETENCIES.find((competency) => competency.id === input.id);
+  const skill = SKILLS.find((item) => item.id === input.id);
+  if (!expected || !skill) {
+    return validateSupportedCompetencyIds([input.id]);
+  }
+
+  const crosswalk = INCOSE_CROSSWALK.find((item) => item.neetCompetencyId === input.id);
+  const fields: Array<{ name: string; actual: unknown; expected: unknown }> = [
+    { name: "code", actual: input.code, expected: expected.code },
+    { name: "domain", actual: input.domain, expected: expected.domain },
+    { name: "title", actual: input.title, expected: expected.title },
+    { name: "blurb", actual: input.blurb, expected: skill.blurb },
+    { name: "definition", actual: input.definition, expected: expected.definition },
+    { name: "Bloom target", actual: input.bloomTarget, expected: expected.bloomTarget },
+    { name: "prerequisites", actual: input.prerequisites, expected: expected.prerequisites },
+    { name: "relations", actual: input.relations, expected: expected.relations },
+    { name: "framework anchors", actual: input.frameworkAnchors, expected: expected.frameworkAnchors },
+    { name: "level descriptors", actual: input.levelDescriptors, expected: expected.levelDescriptors },
+    { name: "mapped volumes", actual: input.mappedVolumes, expected: expected.mappedVolumes },
+    { name: "role tags", actual: input.roleTags, expected: expected.roleTags },
+    { name: "version", actual: input.version, expected: expected.version },
+    { name: "crosswalk", actual: input.crosswalk, expected: crosswalk },
+  ];
+
+  return fields
+    .filter((field) => stableJson(field.actual) !== stableJson(field.expected))
+    .map(
+      (field) =>
+        'Competency "' +
+        input.id +
+        '" ' +
+        field.name +
+        " differs from the versioned source catalogue. Update the source model and version together.",
     );
 }
 
@@ -126,6 +187,9 @@ export function validateCourseBundleReferences(
   const incomingCompetencies = bundle.competencies ?? [];
   const errors = validateCompetencyGraphReferences(existingCompetencies, incomingCompetencies);
   errors.push(...validateSupportedCompetencyIds(incomingCompetencies.map((c) => c.id), supportedIds));
+  for (const competency of incomingCompetencies) {
+    errors.push(...validateCanonicalCompetencyDefinition(competency));
+  }
   const knownIds = new Set([
     ...existingCompetencies.map((competency) => competency.id),
     ...incomingCompetencies.map((competency) => competency.id),
