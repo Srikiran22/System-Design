@@ -151,36 +151,56 @@ const lessonUpsertFieldsSchema = z.object({
   status: publishStatusSchema.default("published"),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
-type LessonReferenceInput = Pick<z.infer<typeof lessonUpsertFieldsSchema>, "skillIds" | "blocks">;
-type LessonRefinementContext = Parameters<
-  Parameters<typeof lessonUpsertFieldsSchema.superRefine>[0]
->[1];
+type LessonReferenceInput = Pick<
+  z.infer<typeof lessonUpsertFieldsSchema>,
+  "skillIds" | "blocks"
+>;
 
-const validateLessonReferences = (lesson: LessonReferenceInput, ctx: LessonRefinementContext) => {
-  const skillIds = new Set(lesson.skillIds);
-  const seenSkillIds = new Set<string>();
+interface LessonReferenceIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+function collectLessonReferenceIssues(lesson: LessonReferenceInput): LessonReferenceIssue[] {
+  const issues: LessonReferenceIssue[] = [];
+  const knownSkills = new Set(lesson.skillIds);
+  const seenSkills = new Set<string>();
+
   lesson.skillIds.forEach((skillId, index) => {
-    if (seenSkillIds.has(skillId)) {
-      ctx.addIssue({
-        code: "custom",
+    if (seenSkills.has(skillId)) {
+      issues.push({
         path: ["skillIds", index],
         message: "A lesson may map each competency only once.",
       });
     }
-    seenSkillIds.add(skillId);
+    seenSkills.add(skillId);
   });
 
   lesson.blocks.forEach((block, index) => {
-    if (block.t === "pause" && !skillIds.has(block.skillId)) {
-      ctx.addIssue({
-        code: "custom",
+    if (block.t === "pause" && !knownSkills.has(block.skillId)) {
+      issues.push({
         path: ["blocks", index, "skillId"],
         message: "Pause checks must map to a competency declared in the lesson skillIds.",
       });
     }
   });
-};
-export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine(validateLessonReferences);
+
+  return issues;
+}
+
+const lessonBundleSchema = lessonUpsertFieldsSchema
+  .omit({ courseId: true, moduleId: true })
+  .superRefine((lesson, ctx) => {
+    for (const issue of collectLessonReferenceIssues(lesson)) {
+      ctx.addIssue({ code: "custom", ...issue });
+    }
+  });
+
+export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine((lesson, ctx) => {
+  for (const issue of collectLessonReferenceIssues(lesson)) {
+    ctx.addIssue({ code: "custom", ...issue });
+  }
+});
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
 export const rubricCriterionSchema = z.object({
