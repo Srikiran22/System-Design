@@ -14,37 +14,10 @@ export const Route = createFileRoute("/library/")({
   }),
   loader: () => listArticles(),
   head: () =>
-    pageHead(
-      "Knowledge library",
-      "Every volume of the systems design, systems thinking and systems engineering knowledge pack.",
-    ),
+    pageHead("Library", "Browse articles by subject."),
   errorComponent: ({ error }) => <LoadError error={error} />,
   component: Library,
 });
-
-const ROMAN = [
-  "0",
-  "I",
-  "II",
-  "III",
-  "IV",
-  "V",
-  "VI",
-  "VII",
-  "VIII",
-  "IX",
-  "X",
-  "XI",
-  "XII",
-  "XIII",
-  "XIV",
-  "XV",
-  "XVI",
-  "XVII",
-  "XVIII",
-  "XIX",
-  "XX",
-];
 
 function Library() {
   const articles = Route.useLoaderData();
@@ -103,9 +76,8 @@ function Library() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-5 md:py-16">
-      <PageHeader eyebrow="Library" title="The knowledge pack">
-        {articles.length} volumes · {Math.round(words / 1000)}k words on systems science, systems
-        engineering, architecture, assurance and practice.
+      <PageHeader eyebrow="Library" title="Browse by track">
+        {articles.length} volumes across {tracks.length} tracks.
       </PageHeader>
 
       <div className="sticky top-16 z-20 -mx-4 mt-8 bg-bg/90 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
@@ -134,35 +106,32 @@ function Library() {
       </div>
 
       <p className="mt-10 text-xs font-medium uppercase tracking-[0.2em] text-accent">
-        Curriculum · {tracks.length} tracks · {articles.length} volumes
+        TRACKS / {tracks.length} / VOLUMES / {articles.length}
       </p>
-      <p className="mt-2 text-muted">
-        Open a track to see its volumes. Each one is a full reading, sourced and cross-linked.
-      </p>
+      <p className="mt-2 text-muted">Open a folder to view its readings.</p>
 
-      <div className="mt-6 border-t border-line">
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
         {groups.length === 0 && (
           <div className="pt-8">
             <Empty>No volumes match “{q}”.</Empty>
           </div>
         )}
         {groups.map(({ t, items }) => {
-          const idx = tracks.indexOf(t);
           const isOpen = !!q || !!track || openSet.has(t);
           const mins = items.reduce((n, a) => n + Math.max(1, Math.round(a.word_count / 220)), 0);
           return (
-            <section key={t} className="border-b border-line">
+            <section key={t} className="folder-card p-5 pt-7">
+              <span className="folder-tab">TRACK</span>
               <button
                 type="button"
                 aria-expanded={isOpen}
                 onClick={() => toggle(t)}
-                className="group grid w-full grid-cols-[2.75rem_1fr_auto] items-center gap-3 py-5 text-left sm:grid-cols-[4rem_1fr_auto_auto] sm:gap-6"
+                className="group flex w-full items-center justify-between gap-3 text-left"
               >
-                <span className="text-sm tabular-nums text-muted">{ROMAN[idx] ?? idx}.</span>
-                <span className="text-lg font-semibold tracking-tight text-text transition group-hover:text-accent sm:text-xl">
+                <span className="font-display text-lg font-bold tracking-tight text-text transition group-hover:text-accent">
                   {t}
                 </span>
-                <span className="hidden text-sm text-muted sm:inline">
+                <span className="text-xs text-muted">
                   {items.length} {items.length === 1 ? "volume" : "volumes"} · ~
                   {mins < 60 ? `${mins} min` : `${Math.round(mins / 60)}h`}
                 </span>
@@ -174,12 +143,12 @@ function Library() {
                 </span>
               </button>
               {isOpen && (
-                <ol className="pb-5 sm:pl-[5.5rem]">
+                <ol className="mt-4 border-t border-line pt-2">
                   {items.map((a) => (
                     <li key={a.slug}>
                       <Link
                         href={`/library/${a.slug}`}
-                        className="group grid grid-cols-[2.75rem_1fr_auto] items-baseline gap-3 rounded-2xl px-0 py-3 transition hover:bg-surface sm:grid-cols-[3.5rem_1fr_auto] sm:px-3"
+                        className="group grid grid-cols-[2rem_1fr_auto] items-baseline gap-3 rounded-md px-2 py-3 transition hover:bg-surface-3"
                       >
                         <span className="text-xs tabular-nums text-muted">
                           {a.number === null ? "—" : String(a.number).padStart(2, "0")}
