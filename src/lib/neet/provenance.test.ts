@@ -1,4 +1,7 @@
 // @vitest-environment node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   ALL_ENRICHED_SOURCES,
@@ -7,8 +10,52 @@ import {
   getSourcesForArticleSplit,
 } from "./sourceEnrichment";
 import { getPublicHealth } from "./db.server";
+import { validatePackAt } from "../../../scripts/validate-pack";
 
-describe("Knowledge & Research Provenance Governance (Phase 4)", () => {
+function makeTempPackFixture(opts?: {
+  asOf?: string | null;
+  sourcesCsv?: string;
+  markdownBody?: string;
+  mirrorBody?: string | null;
+}): { root: string; packDir: string; mirrorDir: string | null } {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "neet-pack-test-"));
+  const packDir = path.join(root, "pack");
+  fs.mkdirSync(packDir, { recursive: true });
+
+  const meta =
+    opts?.asOf === null
+      ? { version: "1.0" }
+      : { version: "1.0", as_of: opts?.asOf ?? "2026-11-05" };
+  fs.writeFileSync(path.join(packDir, "PACK_METADATA.json"), JSON.stringify(meta));
+
+  fs.writeFileSync(
+    path.join(packDir, "sources.csv"),
+    opts?.sourcesCsv ??
+      "source_id,title,url\nS01,Valid Standard,https://example.org/s01\nS02,Second Source,https://example.org/s02\n",
+  );
+  fs.writeFileSync(
+    path.join(packDir, "practice_prompts.csv"),
+    "id,prompt\nP1,Prompt one\nP2,Prompt two\n",
+  );
+  fs.writeFileSync(
+    path.join(packDir, "DEEP_SCRAPE_AUDIT.csv"),
+    "id,title,url,tier,status\nS01,Valid Standard,https://example.org/s01,primary,Full\n",
+  );
+  fs.writeFileSync(
+    path.join(packDir, "01_INTRO.md"),
+    opts?.markdownBody ?? "# Intro\nGrounded in [S01] and [S02].\n",
+  );
+
+  let mirrorDir: string | null = null;
+  if (opts?.mirrorBody !== undefined && opts?.mirrorBody !== null) {
+    mirrorDir = path.join(root, "mirror");
+    fs.mkdirSync(mirrorDir, { recursive: true });
+    fs.writeFileSync(path.join(mirrorDir, "01_INTRO.md"), opts.mirrorBody);
+  }
+  return { root, packDir, mirrorDir };
+}
+
+describe("Knowledge & Research Provenance Governance (Phase 4 & Stage 6)", () => {
   it("registers all 320 sources with valid HTTP(S) URLs and typed authority/provenance status", () => {
     expect(ALL_ENRICHED_SOURCES.length).toBe(320);
 
@@ -49,7 +96,6 @@ describe("Knowledge & Research Provenance Governance (Phase 4)", () => {
         expect(explicitSlugs.has(rel.slug)).toBe(false);
       }
     }
-    // At least 200 sources are explicitly cited; uncited sources stay out of cited_in_articles
     expect(explicitlyCitedCount).toBeGreaterThanOrEqual(200);
     expect(explicitlyCitedCount).toBeLessThan(ALL_ENRICHED_SOURCES.length);
 
@@ -82,5 +128,85 @@ describe("Knowledge & Research Provenance Governance (Phase 4)", () => {
     expect(serialized).not.toContain("rssMb");
     expect(serialized).not.toContain("profiles");
     expect(serialized).not.toContain("progress_events");
+  });
+
+  it("passes strict pack CI validation on the real repository knowledge pack", () => {
+    const res = validatePackAt(
+      path.resolve(process.cwd(), "content/pack"),
+      path.resolve(process.cwd(), "SS_content"),
+    );
+    expect(res.valid).toBe(true);
+    expect(res.errors).toEqual([]);
+    expect(res.stats.volumes).toBe(119);
+    expect(res.stats.sources).toBe(320);
+    expect(res.stats.danglingCitations).toBe(0);
+    expect(res.stats.mirrorDriftFiles).toBe(0);
+  });
+
+  it("fails CI validation on dangling citations, mirror drift, malformed URLs, missing metadata, and low bounds", () => {
+    const smallBounds = { minVolumes: 1, minSources: 2, minPrompts: 1, minAuditRows: 1 };
+
+    // 1. Dangling citation [S999]
+    const f1 = makeTempPackFixture({ markdownBody: "# Intro\nUnsupported claim [S999].\n" });
+    try {
+      const r1 = validatePackAt(f1.packDir, null, smallBounds);
+      expect(r1.valid).toBe(false);
+      expect(r1.stats.danglingCitations).toBe(1);
+      expect(r1.errors.some((e) => e.includes("S999"))).toBe(true);
+    } finally {
+      fs.rmSync(f1.root, { recursive: true, force: true });
+    }
+
+    // 2. Mirror drift between content/pack and SS_content
+    const f2 = makeTempPackFixture({
+      markdownBody: "# Intro\nCanonical [S01].\n",
+      mirrorBody: "# Intro\nDrifted copy [S01].\n",
+    });
+    try {
+      const r2 = validatePackAt(f2.packDir, f2.mirrorDir, smallBounds);
+      expect(r2.valid).toBe(false);
+      expect(r2.stats.mirrorDriftFiles).toBe(1);
+      expect(r2.errors.some((e) => e.toLowerCase().includes("drift"))).toBe(true);
+    } finally {
+      fs.rmSync(f2.root, { recursive: true, force: true });
+    }
+
+    // 3. Malformed / non-HTTP URL
+    const f3 = makeTempPackFixture({
+      sourcesCsv:
+        "source_id,title,url\nS01,Valid,https://example.org/s01\nS02,Bad,javascript:alert(1)\n",
+    });
+    try {
+      const r3 = validatePackAt(f3.packDir, null, smallBounds);
+      expect(r3.valid).toBe(false);
+      expect(r3.stats.invalidUrls).toBe(1);
+    } finally {
+      fs.rmSync(f3.root, { recursive: true, force: true });
+    }
+
+    // 4. Missing as_of metadata
+    const f4 = makeTempPackFixture({ asOf: null });
+    try {
+      const r4 = validatePackAt(f4.packDir, null, smallBounds);
+      expect(r4.valid).toBe(false);
+      expect(r4.errors.some((e) => e.includes("as_of"))).toBe(true);
+    } finally {
+      fs.rmSync(f4.root, { recursive: true, force: true });
+    }
+
+    // 5. Below-minimum counts
+    const f5 = makeTempPackFixture();
+    try {
+      const r5 = validatePackAt(f5.packDir, null, {
+        minVolumes: 5,
+        minSources: 10,
+        minPrompts: 5,
+        minAuditRows: 5,
+      });
+      expect(r5.valid).toBe(false);
+      expect(r5.errors.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      fs.rmSync(f5.root, { recursive: true, force: true });
+    }
   });
 });

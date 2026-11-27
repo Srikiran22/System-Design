@@ -16,10 +16,10 @@ export default function ProgressBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={label ?? "Progress"}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
+        className="h-2 w-full overflow-hidden rounded-full bg-surface-3"
       >
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500"
+          className="h-full rounded-full bg-accent transition-[width] duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>

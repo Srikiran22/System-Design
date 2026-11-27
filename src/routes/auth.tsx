@@ -88,80 +88,104 @@ function AuthPage() {
         : "Reset your password";
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-md flex-col justify-center px-5 py-16">
-      <h1 className="text-4xl font-semibold tracking-tight">{title}</h1>
-      <p className="mt-2 text-muted">
-        {mode === "forgot"
-          ? "We'll email you a link to set a new password."
-          : "Your progress, goals and signature follow you on every device."}
-      </p>
+    <div className="mx-auto flex min-h-[calc(100vh-10rem)] max-w-md flex-col justify-center px-5 py-16">
+      <div className="rounded-lg border border-line bg-surface-2 p-8">
+        <p className="section-label text-accent">Account</p>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-text">{title}</h1>
+        <p className="mt-2 text-sm text-muted">
+          {mode === "forgot"
+            ? "We'll email you a link to set a new password."
+            : "Your progress, goals, and engineering artifacts follow you across devices."}
+        </p>
 
-      {mode !== "forgot" && (
-        <div role="tablist" className="mt-8 grid grid-cols-2 rounded-full bg-surface-2 p-1 text-sm">
-          {(["signin", "signup"] as const).map((m) => (
-            <button
-              key={m}
-              role="tab"
-              aria-selected={mode === m}
-              onClick={() => {
-                setMode(m);
-                setError(null);
-                setNotice(null);
-              }}
-              className={`rounded-full py-2 transition ${mode === m ? "bg-bg font-medium text-text shadow-sm" : "text-muted"}`}
-            >
-              {m === "signin" ? "Sign in" : "Create account"}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
-        {mode === "signup" && (
-          <Field label="Full name" value={name} onChange={setName} autoComplete="name" />
-        )}
-        <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
         {mode !== "forgot" && (
-          <Field
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          />
+          <div
+            role="tablist"
+            className="mt-6 grid grid-cols-2 gap-1 rounded-md border border-line bg-surface-1 p-1 text-sm"
+          >
+            {(["signin", "signup"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => {
+                  setMode(m);
+                  setError(null);
+                  setNotice(null);
+                }}
+                className={`rounded py-2 text-xs font-semibold transition ${
+                  mode === m ? "bg-accent text-bg" : "text-muted hover:text-text"
+                }`}
+              >
+                {m === "signin" ? "Sign in" : "Create account"}
+              </button>
+            ))}
+          </div>
         )}
-        {error && (
-          <p role="alert" className="rounded-2xl bg-surface-2 px-4 py-3 text-sm text-text">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="rounded-2xl bg-accent/10 px-4 py-3 text-sm text-text">
-            {notice}
-          </p>
-        )}
-        <button disabled={busy} className="btn-ink w-full justify-center disabled:opacity-50">
-          {busy
-            ? "Please wait…"
-            : mode === "signin"
-              ? "Sign in"
-              : mode === "signup"
-                ? "Create account"
-                : "Send reset link"}
-        </button>
-      </form>
 
-      <div className="mt-6 text-center text-sm text-muted">
-        {mode === "signin" && (
-          <button onClick={() => setMode("forgot")} className="hover:text-text">
-            Forgot password?
+        <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
+          {mode === "signup" && (
+            <Field label="Full name" value={name} onChange={setName} autoComplete="name" />
+          )}
+          <Field
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+          />
+          {mode !== "forgot" && (
+            <Field
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            />
+          )}
+          {error && (
+            <p
+              role="alert"
+              className="rounded-md border border-magenta/40 bg-magenta/10 px-4 py-3 text-sm text-text"
+            >
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p
+              role="status"
+              className="rounded-md border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-text"
+            >
+              {notice}
+            </p>
+          )}
+          <button
+            disabled={busy}
+            className="btn-ink w-full justify-center text-sm disabled:opacity-50"
+          >
+            {busy
+              ? "Please wait…"
+              : mode === "signin"
+                ? "Sign in"
+                : mode === "signup"
+                  ? "Create account"
+                  : "Send reset link"}
           </button>
-        )}
-        {mode === "forgot" && (
-          <button onClick={() => setMode("signin")} className="hover:text-text">
-            ← Back to sign in
-          </button>
-        )}
+        </form>
+
+        <div className="mt-6 text-center text-sm text-muted">
+          {mode === "signin" && (
+            <button type="button" onClick={() => setMode("forgot")} className="hover:text-accent">
+              Forgot password?
+            </button>
+          )}
+          {mode === "forgot" && (
+            <button type="button" onClick={() => setMode("signin")} className="hover:text-accent">
+              ← Back to sign in
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -182,14 +206,14 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-sm text-muted">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wider text-muted">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         autoComplete={autoComplete}
         required
-        className="mt-1 w-full rounded-2xl border border-line bg-bg px-4 py-3 outline-none transition focus:border-accent"
+        className="mt-1.5 w-full rounded-md border border-line bg-bg px-3.5 py-2.5 text-sm text-text outline-none transition focus:border-accent"
       />
     </label>
   );

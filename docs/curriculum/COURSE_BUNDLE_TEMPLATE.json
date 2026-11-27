@@ -1,0 +1,196 @@
+{
+  "schemaVersion": "1.0",
+  "course": {
+    "slug": "custom-distributed-observability",
+    "discipline": "design",
+    "title": "Distributed Observability & Telemetry Engineering",
+    "tagline": "Design low-cardinality metrics, structured traces, and SLO burn alerts that survive overload.",
+    "level": "Intermediate",
+    "status": "published",
+    "about": [
+      "Observability is not collecting every log line; it is instrumenting the exact signals required to isolate failure modes under time pressure.",
+      "In this course you design telemetry schemas, bound label cardinality, and derive multi-window SLO burn alerts."
+    ],
+    "outcomes": [
+      "Bound telemetry cardinality so monitoring never collapses during traffic spikes.",
+      "Translate user-facing reliability requirements into SLI formulas and multi-window burn alerts.",
+      "Correlate distributed traces with structured redacted logs using request IDs."
+    ],
+    "artifact": "A production observability design doc + SLO burn-rate specification for a multi-service checkout path.",
+    "sortOrder": 200
+  },
+  "competencies": [
+    {
+      "id": "sd-observability-slo",
+      "code": "SE-SD-07",
+      "domain": "design",
+      "title": "Observability & SLO Telemetry",
+      "blurb": "Design bounded-cardinality metrics, correlated traces, and error-budget burn alerts.",
+      "definition": "Architect operational telemetry pipelines that expose leading indicators of degradation without introducing unbounded cardinality or PII leakage.",
+      "bloomTarget": "evaluate",
+      "prerequisites": ["sd-reliability"],
+      "relations": [{ "targetId": "sd-reliability", "kind": "assumes" }],
+      "frameworkAnchors": [
+        {
+          "framework": "ISO/IEC/IEEE",
+          "reference": "ISO/IEC/IEEE 15288 · Measurement & Operation",
+          "note": "Continuous technical performance measurement and operational monitoring."
+        }
+      ],
+      "levelDescriptors": [
+        {
+          "level": 1,
+          "stage": "Search",
+          "observableOutcome": "Distinguish SLIs, SLOs, and SLAs and identify unbounded label cardinality hazards.",
+          "requiredEvidence": ["quiz"]
+        },
+        {
+          "level": 2,
+          "stage": "Know",
+          "observableOutcome": "Explain why multi-window error-budget burn alerts outperform static threshold alerts.",
+          "requiredEvidence": ["quiz", "explain"]
+        },
+        {
+          "level": 3,
+          "stage": "Adapt",
+          "observableOutcome": "Design a redacted telemetry pipeline with latency histograms and request correlation.",
+          "requiredEvidence": ["lab"]
+        },
+        {
+          "level": 4,
+          "stage": "Proceed",
+          "observableOutcome": "Ship a complete observability & runbook specification validated against overload scenarios.",
+          "requiredEvidence": ["artifact"]
+        }
+      ],
+      "mappedVolumes": ["10-operations-observability-and-delivery", "100-operational-reliability-objectives-sli-slo-error-budgets-and-mission-metrics"],
+      "roleTags": ["SRE", "Systems Architect"],
+      "version": "2.0.0",
+      "sortOrder": 200
+    }
+  ],
+  "modules": [
+    {
+      "slug": "telemetry-foundations",
+      "title": "Telemetry Foundations & Cardinality",
+      "summary": "Separate high-signal operational metrics from noisy debug exhaust.",
+      "sortOrder": 10,
+      "lessons": [
+        {
+          "slug": "cardinality-and-redaction",
+          "title": "Bounded Cardinality & Secret Redaction",
+          "summary": "Why putting user IDs in Prometheus labels takes down monitoring during incidents.",
+          "minutes": 12,
+          "skillIds": ["sd-observability-slo"],
+          "status": "published",
+          "sortOrder": 10,
+          "keep": [
+            "Never put unbounded identifiers (userId, requestId, email) in metric labels.",
+            "Put high-cardinality correlation IDs in structured logs and traces with automatic PII redaction."
+          ],
+          "blocks": [
+            { "t": "h2", "text": "The Cardinality Trap" },
+            {
+              "t": "p",
+              "text": "Every unique combination of metric label values creates a distinct time series in memory. Putting a user ID or raw URL path into a metric label multiplies memory usage linearly with traffic—meaning your monitoring fails right when an incident spikes."
+            },
+            {
+              "t": "callout",
+              "title": "Rule of Thumb",
+              "text": "Metrics stay low-cardinality (route template, status class, operation name). Logs and distributed traces carry X-Request-Id and hashed actor references.",
+              "tone": "note"
+            },
+            {
+              "t": "pause",
+              "id": "pause-obs-cardinality-1",
+              "skillId": "sd-observability-slo",
+              "q": "Which label is safe to attach to an HTTP request latency histogram metric?",
+              "options": [
+                "The raw user email address",
+                "The full URL including query parameters",
+                "The normalized route template and HTTP status class (e.g. /paths/$slug, 2xx)",
+                "The random UUID X-Request-Id header"
+              ],
+              "answer": 2,
+              "why": "Normalized route templates and status classes have a small, fixed set of values (low cardinality), preventing time-series explosion while preserving actionable latency breakdowns."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "labs": [
+    {
+      "id": "lab-slo-burn-design",
+      "discipline": "design",
+      "skillId": "sd-observability-slo",
+      "title": "Multi-Window SLO Burn Alert & Redaction Design",
+      "brief": "Define SLIs, a 30-day error budget, multi-window burn-rate alerts, and a log-redaction policy for a user-facing API.",
+      "minutes": 35,
+      "steps": [
+        "Specify the exact good-events / valid-events SLI ratio for availability and p95 latency.",
+        "Calculate the 30-day error budget minutes for a 99.9% SLO.",
+        "Define fast-burn (2% budget in 1h) and slow-burn (5% budget in 6h) alert rules with linked runbooks.",
+        "List every field that must be redacted before logs leave the server."
+      ],
+      "twist": "A client bug sends 20,000 malformed 400 Bad Request calls per minute—ensure your SLI excludes client-side 4xx errors without hiding genuine 5xx outages.",
+      "artifact": "A structured SLO + redaction specification document with worked burn-rate math.",
+      "evidenceType": "lab",
+      "status": "published",
+      "sortOrder": 200,
+      "rubric": {
+        "id": "rubric-slo-burn-v1",
+        "version": "1.0.0",
+        "labTitle": "Multi-Window SLO Burn Alert & Redaction Design",
+        "passThreshold": 0.7,
+        "criteria": [
+          {
+            "id": "sli-math",
+            "label": "SLI Formula & Error Budget Arithmetic",
+            "weight": 0.4,
+            "rationale": "Ambiguous SLI definitions produce noisy alerts and broken error budgets.",
+            "evidenceRequired": "Exact numerator/denominator formula plus worked 30-day downtime budget.",
+            "typicalFailureModes": ["Counting 4xx client errors as server availability failures"],
+            "descriptors": {
+              "1": "SLI or error budget omitted or incorrect.",
+              "2": "SLI stated informally without exact numerator/denominator or budget math.",
+              "3": "Exact SLI ratio and 30-day error budget arithmetic clearly verified.",
+              "4": "SLI handles edge cases (4xx exclusion, health probes) with sensitivity bounds."
+            },
+            "revisionHint": "Write out good/valid event definitions and show the exact minutes in a 30-day 99.9% budget."
+          },
+          {
+            "id": "burn-alerts",
+            "label": "Multi-Window Burn-Rate Alerting",
+            "weight": 0.35,
+            "rationale": "Single-window thresholds either alert too slowly or page on brief blips.",
+            "evidenceRequired": "Fast and slow burn windows with explicit page vs. ticket routing.",
+            "typicalFailureModes": ["Paging on 1-minute CPU spikes instead of user-visible error burn"],
+            "descriptors": {
+              "1": "Only static host CPU/memory alerts provided.",
+              "2": "Burn rate mentioned without short/long confirmation windows.",
+              "3": "Fast-burn page and slow-burn ticket windows specified with runbook triggers.",
+              "4": "Dual-window burn rates verified for detection time and reset time under burst load."
+            },
+            "revisionHint": "Pair each long window with a short confirmation window to stop alert flapping."
+          },
+          {
+            "id": "redaction",
+            "label": "Telemetry Privacy & Cardinality Hygiene",
+            "weight": 0.25,
+            "rationale": "Logs leaking tokens or unbounded metric labels create security and outage incidents.",
+            "evidenceRequired": "Redaction denylist and explicit low-cardinality metric label schema.",
+            "typicalFailureModes": ["Logging Authorization headers or raw emails"],
+            "descriptors": {
+              "1": "Redaction and cardinality constraints omitted.",
+              "2": "General mention of privacy without concrete fields or label bounds.",
+              "3": "Explicit redaction list and bounded metric label set specified.",
+              "4": "Automated test assertions defined to prevent secret leakage and label explosion."
+            },
+            "revisionHint": "Enumerate exact sensitive keys to redact and cap metric labels to bounded enums."
+          }
+        ]
+      }
+    }
+  ]
+}

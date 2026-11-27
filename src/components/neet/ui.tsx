@@ -11,9 +11,11 @@ export function PageHeader({
 }) {
   return (
     <header className="max-w-3xl">
-      <p className="text-sm font-medium text-accent">{eyebrow}</p>
-      <h1 className="mt-1 text-4xl font-semibold leading-tight md:text-5xl">{title}</h1>
-      {children && <div className="mt-4 text-lg leading-8 text-muted">{children}</div>}
+      <p className="section-label text-accent">{eyebrow}</p>
+      <h1 className="section-title text-4xl text-text md:text-5xl">{title}</h1>
+      {children && (
+        <div className="mt-4 text-base leading-relaxed text-muted sm:text-lg">{children}</div>
+      )}
     </header>
   );
 }
@@ -31,7 +33,7 @@ export function SearchField({
     <label className="relative block w-full">
       <span className="sr-only">{placeholder}</span>
       <svg
-        className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted"
+        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
         width="16"
         height="16"
         viewBox="0 0 24 24"
@@ -48,7 +50,7 @@ export function SearchField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-full border border-line bg-surface py-3 pl-11 pr-4 text-text outline-none transition placeholder:text-muted focus:border-accent focus:bg-bg"
+        className="w-full rounded-md border border-line bg-surface-2 py-2.5 pl-10 pr-4 text-sm text-text outline-none transition placeholder:text-muted focus:border-accent"
       />
     </label>
   );
@@ -68,7 +70,11 @@ export function Chip({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`shrink-0 rounded-full px-4 py-1.5 text-sm transition ${active ? "bg-ink text-bg" : "bg-surface-2 text-text hover:bg-line"}`}
+      className={`shrink-0 whitespace-nowrap rounded-md border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+        active
+          ? "border-accent bg-accent font-semibold text-bg"
+          : "border-line bg-surface-2 text-muted hover:border-accent hover:text-text"
+      }`}
     >
       {children}
     </button>
@@ -79,21 +85,25 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   if (!children) return null;
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm leading-6 text-text">{children}</dd>
+      <dt className="text-xs font-semibold uppercase tracking-wider text-muted">{label}</dt>
+      <dd className="mt-1 text-sm leading-6 text-text">{children}</dd>
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="rounded-3xl bg-surface p-10 text-center text-muted">{children}</p>;
+  return (
+    <p className="rounded-lg border border-line bg-surface-2 p-10 text-center text-sm text-muted">
+      {children}
+    </p>
+  );
 }
 
 export function LoadError({ error }: { error: unknown }) {
   return (
     <div role="alert" className="mx-auto max-w-xl px-5 py-24 text-center">
-      <h1 className="text-3xl font-semibold">Couldn&apos;t load this page</h1>
-      <p className="mt-3 text-muted">
+      <h1 className="font-display text-3xl font-bold text-text">Couldn&apos;t load this page</h1>
+      <p className="mt-3 text-sm text-muted">
         {error instanceof Error ? error.message : "Please try again."}
       </p>
     </div>

@@ -5,7 +5,8 @@ import LessonActions, { SaveButton } from "@/components/neet/LessonActions";
 import LessonBlocks, { slugify } from "@/components/neet/LessonBlocks";
 import LessonSidebar from "@/components/neet/LessonSidebar";
 import SignatureGate from "@/components/neet/SignatureGate";
-import { PATHS, flatLessons, skillById } from "@/lib/neet/content";
+import { skillById } from "@/lib/neet/content";
+import { getLesson } from "@/lib/neet/curriculum.functions";
 
 function LessonPage() {
   const data = Route.useLoaderData();
@@ -102,19 +103,12 @@ function LessonPage() {
 }
 
 export const Route = createFileRoute("/_authenticated/learn/$path/$lesson")({
-  loader: ({ params }) => {
-    const path = PATHS.find((p) => p.slug === params.path);
-    if (!path) throw notFound();
-    const flat = flatLessons(path);
-    const i = flat.findIndex((x) => x.lesson.slug === params.lesson);
-    if (i < 0) throw notFound();
-    return {
-      path,
-      module: flat[i]!.module,
-      lesson: flat[i]!.lesson,
-      prev: i > 0 ? { path: path.slug, lesson: flat[i - 1]!.lesson } : null,
-      next: i < flat.length - 1 ? { path: path.slug, lesson: flat[i + 1]!.lesson } : null,
-    };
+  loader: async ({ params }) => {
+    const res = await getLesson({
+      data: { courseSlug: params.path, lessonSlug: params.lesson },
+    });
+    if (!res.data) throw notFound();
+    return res.data;
   },
   head: ({ loaderData }) =>
     pageHead(loaderData?.lesson.title ?? "Lesson", loaderData?.lesson.summary ?? "A short lesson."),

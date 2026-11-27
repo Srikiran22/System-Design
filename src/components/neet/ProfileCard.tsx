@@ -60,7 +60,7 @@ export default function ProfileMenu() {
         <button
           type="button"
           aria-label="Your profile"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-text text-sm font-semibold text-bg transition hover:opacity-85"
+          className="flex h-9 w-9 items-center justify-center rounded-md bg-accent font-display text-xs font-bold text-bg transition hover:opacity-85"
         >
           {initials}
         </button>
@@ -70,7 +70,7 @@ export default function ProfileMenu() {
         sideOffset={10}
         className="w-[min(22rem,calc(100vw-1.5rem))] border-0 bg-transparent p-0 shadow-none"
       >
-        <SpotlightCard className="border border-line bg-bg p-5 shadow-[var(--shadow-lift)] hover:translate-y-0">
+        <SpotlightCard className="border border-line bg-surface-2 p-5 shadow-[var(--shadow-lift)] hover:translate-y-0">
           {error ? (
             <div className="text-sm">
               <p className="text-muted">{error}</p>
@@ -80,12 +80,12 @@ export default function ProfileMenu() {
             </div>
           ) : loading || !me ? (
             <div className="space-y-3" aria-busy>
-              <div className="h-16 animate-pulse rounded-2xl bg-surface-2" />
-              <div className="h-4 w-1/2 animate-pulse rounded bg-surface-2" />
+              <div className="h-16 animate-pulse rounded-md bg-surface-3" />
+              <div className="h-4 w-1/2 animate-pulse rounded bg-surface-3" />
             </div>
           ) : (
             <>
-              <div className="h-16 rounded-2xl bg-surface">
+              <div className="h-16 rounded-md border border-line bg-surface-1">
                 <AsciiSignature initials={initials} seed={me.profile.signature_seed} cell={6} />
               </div>
               <p className="mt-3 font-semibold text-text">
@@ -99,15 +99,18 @@ export default function ProfileMenu() {
                   ["Best", `${s.longest}d`],
                   ["Lessons", lessons],
                 ].map(([k, v]) => (
-                  <div key={k as string} className="rounded-2xl bg-surface py-2">
-                    <p className="text-lg font-semibold text-text">{v}</p>
+                  <div
+                    key={k as string}
+                    className="rounded-md border border-line bg-surface-1 py-2"
+                  >
+                    <p className="dot-matrix text-lg font-bold text-text">{v}</p>
                     <p className="text-[11px] uppercase tracking-wide text-muted">{k}</p>
                   </div>
                 ))}
               </div>
 
               <div className="mt-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                   Learning goals
                 </p>
                 <ul className="mt-2 space-y-1.5">
@@ -141,19 +144,25 @@ export default function ProfileMenu() {
                       onChange={(e) => setGoal(e.target.value)}
                       maxLength={200}
                       placeholder="Add a goal"
-                      className="min-w-0 flex-1 rounded-full border border-line bg-bg px-3 py-1.5 text-sm outline-none focus:border-accent"
+                      className="min-w-0 flex-1 rounded-md border border-line bg-bg px-3 py-1.5 text-sm text-text outline-none focus:border-accent"
                     />
-                    <button className="rounded-full bg-surface-2 px-3 text-sm">Add</button>
+                    <button className="rounded-md border border-line bg-surface-3 px-3 text-sm text-text hover:border-accent">
+                      Add
+                    </button>
                   </form>
                 )}
               </div>
 
-              <div className="mt-4 rounded-2xl bg-surface p-3">
+              <div className="mt-4 rounded-md border border-line bg-surface-1 p-3">
                 <ProgressHeatmap events={events} weeks={16} compact />
               </div>
 
               <div className="mt-4 flex items-center justify-between">
-                <Link href="/me" onClick={() => setOpen(false)} className="text-sm text-accent">
+                <Link
+                  href="/me"
+                  onClick={() => setOpen(false)}
+                  className="text-sm text-accent hover:underline"
+                >
                   Full progress →
                 </Link>
                 <button onClick={signOut} className="text-sm text-muted hover:text-text">

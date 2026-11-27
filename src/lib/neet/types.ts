@@ -3,6 +3,9 @@ export type Discipline = "thinking" | "design" | "engineering";
 export type EvidenceType = "quiz" | "explain" | "variant" | "lab" | "artifact" | "review";
 export type VerificationTier =
   "self-assessed" | "automated-check" | "rubric-evaluated" | "reviewer-verified";
+export type EvaluatorRole = "self" | "automated" | "peer" | "reviewer";
+export type ReviewState =
+  "draft" | "submitted" | "under_review" | "needs_revision" | "accepted" | "not_met";
 export type FreshnessStatus = "fresh" | "aging" | "stale" | "none";
 export type BloomLevel = "apply" | "analyze" | "evaluate" | "create";
 
@@ -28,10 +31,15 @@ export interface Evidence {
   ref?: string;
   /** deterministic idempotency key for durable sync */
   idempotencyKey?: string;
-  /** provenance of evaluation — separates self-report from automated & rubric-checked work */
+  /** provenance of evaluation — strictly separates self-report from automated checks & verified review */
   verificationTier?: VerificationTier;
+  evaluatorRole?: EvaluatorRole;
+  reviewState?: ReviewState;
+  rubricId?: string;
   rubricVersion?: string;
   rubricScores?: Record<string, number>;
+  reviewerId?: string;
+  reviewedAt?: string;
   artifactUrl?: string;
   artifactNotes?: string;
 }
@@ -112,18 +120,31 @@ export interface Lab {
   artifact: string;
 }
 
+export interface DecisionRecord {
+  selectedDecision: string;
+  rejectedAlternatives: string;
+  assumptions: string;
+  residualRisks: string;
+}
+
 export interface ArtifactAttempt {
   attemptNumber: number;
   at: string;
   note: string;
   artifactUrl?: string;
   twistResponse?: string;
+  feedbackResponse?: string;
+  linkedPriorArtifactIds?: string[];
+  decisionRecord?: DecisionRecord;
+  rubricId: string;
   rubricVersion: string;
   rubricScores: Record<string, number>;
   weightedScore: number;
   passedThreshold: boolean;
   feedbackSummary: string[];
   verificationTier: VerificationTier;
+  evaluatorRole: EvaluatorRole;
+  reviewState: ReviewState;
 }
 
 export interface LearningRepo {

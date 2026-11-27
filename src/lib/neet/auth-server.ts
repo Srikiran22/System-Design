@@ -3,12 +3,30 @@ import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { logEvent } from "./logger";
+import { logEvent, safeUserRef } from "./logger";
+import { recordAuthOutcome } from "./metrics.server";
 
 export const DEV_SESSION_COOKIE = "neet_dev_session";
 const DEV_TOKEN_ISSUER = "neet-local-dev";
 const DEV_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type AppRole = "learner" | "reviewer" | "author" | "admin";
+
+const ROLE_RANK: Record<AppRole, number> = {
+  learner: 0,
+  reviewer: 1,
+  author: 2,
+  admin: 3,
+};
+
+export function isAppRole(v: unknown): v is AppRole {
+  return v === "learner" || v === "reviewer" || v === "author" || v === "admin";
+}
+
+export function hasRoleAtLeast(role: AppRole, minimum: AppRole): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[minimum];
+}
 
 export class AuthError extends Error {
   readonly statusCode: number;
@@ -26,7 +44,9 @@ export type VerifiedAuthContext = {
   supabase: SupabaseClient<Database> | null;
   userId: string;
   email: string | null;
+  role: AppRole;
   authMode: "supabase" | "local_dev";
+  requestId: string;
 };
 
 /** True when Supabase server env vars are configured. */
@@ -47,6 +67,19 @@ export function isLocalDevAuthAllowed(): boolean {
   if (process.env["NODE_ENV"] === "production") return false;
   if (isSupabaseServerConfigured()) return false;
   return true;
+}
+
+/** Checks server-configured ADMIN_EMAILS allowlist against a verified email address. */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const raw = process.env["ADMIN_EMAILS"] ?? "";
+  if (!raw.trim()) return false;
+  const normalized = email.trim().toLowerCase();
+  return raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(normalized);
 }
 
 // Ephemeral in-memory signing secret for local dev tokens (never persisted or exposed to client).
@@ -226,6 +259,72 @@ export function extractBearerToken(request: Request | undefined | null): string 
   return token.length > 0 ? token : null;
 }
 
+export function extractRequestId(request: Request | undefined | null): string {
+  const incoming = request?.headers?.get("x-request-id")?.trim();
+  if (incoming && /^[A-Za-z0-9._-]{8,64}$/.test(incoming)) return incoming;
+  return crypto.randomUUID();
+}
+
+async function resolveSupabaseRole(
+  client: SupabaseClient<Database>,
+  userId: string,
+  email: string | null,
+  claims: Record<string, unknown> | undefined,
+): Promise<AppRole> {
+  if (isAdminEmail(email)) return "admin";
+
+  // Check verified JWT app_metadata ONLY (never user_metadata, which users can self-edit).
+  const appMeta = claims?.["app_metadata"];
+  if (appMeta && typeof appMeta === "object") {
+    const metaRole = (appMeta as Record<string, unknown>)["role"];
+    if (isAppRole(metaRole)) return metaRole;
+  }
+
+  // Fallback to owner-readable user_roles table if provisioned in Supabase.
+  try {
+    const res = await (
+      client as unknown as {
+        from: (t: string) => {
+          select: (c: string) => {
+            eq: (
+              col: string,
+              val: string,
+            ) => {
+              maybeSingle: () => Promise<{
+                data: { role?: unknown } | null;
+                error: { message: string } | null;
+              }>;
+            };
+          };
+        };
+      }
+    )
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!res.error && isAppRole(res.data?.role)) {
+      return res.data.role;
+    }
+  } catch {
+    /* table not provisioned yet — fail closed to learner */
+  }
+
+  return "learner";
+}
+
+async function resolveLocalRole(userId: string, email: string | null): Promise<AppRole> {
+  if (isAdminEmail(email)) return "admin";
+  try {
+    const { localDb } = await import("./db.server");
+    const dbRole = localDb.getUserRole(userId);
+    if (isAppRole(dbRole)) return dbRole;
+  } catch {
+    /* ignore */
+  }
+  return "learner";
+}
+
 /**
  * Fail-closed server authentication principal resolver.
  * Never reads unverified JWT payload claims; never falls back to a fixed default user ID.
@@ -234,10 +333,12 @@ export async function verifyRequestPrincipal(
   request: Request | undefined | null,
 ): Promise<VerifiedAuthContext> {
   const bearer = extractBearerToken(request);
+  const requestId = extractRequestId(request);
 
   // Path A: Production / Supabase-configured mode — STRICTLY verified via Supabase getClaims()
   if (isSupabaseServerConfigured()) {
     if (!bearer) {
+      recordAuthOutcome("denied");
       throw new AuthError("Authentication required.", 401, "missing_token");
     }
     const SUPABASE_URL = (process.env["SUPABASE_URL"] ?? process.env["VITE_SUPABASE_URL"])!;
@@ -265,24 +366,38 @@ export async function verifyRequestPrincipal(
     const { data, error } = await client.auth.getClaims(bearer);
     const sub = data?.claims?.sub;
     if (error || typeof sub !== "string" || !UUID_RE.test(sub)) {
-      logEvent("warn", "auth", "supabase_claims_rejected", {
-        reason: error?.message ?? "missing_sub",
-      });
+      recordAuthOutcome("denied");
+      logEvent(
+        "warn",
+        "auth",
+        "supabase_claims_rejected",
+        { reason: error?.message ?? "missing_sub" },
+        requestId,
+      );
       throw new AuthError("Invalid or expired session.", 401, "invalid_session");
     }
 
     const email = typeof data?.claims?.email === "string" ? data.claims.email : null;
+    const role = await resolveSupabaseRole(
+      client,
+      sub,
+      email,
+      data?.claims as Record<string, unknown> | undefined,
+    );
     return {
       supabase: client,
       userId: sub,
       email,
+      role,
       authMode: "supabase",
+      requestId,
     };
   }
 
   // Path B: Local development mode ONLY — strictly verified HS256 token signed by this server
   if (!isLocalDevAuthAllowed()) {
-    logEvent("error", "auth", "production_auth_unconfigured");
+    recordAuthOutcome("denied");
+    logEvent("error", "auth", "production_auth_unconfigured", undefined, requestId);
     throw new AuthError(
       "Authentication service is not configured for production.",
       503,
@@ -293,16 +408,31 @@ export async function verifyRequestPrincipal(
   const cookieToken = extractCookie(request?.headers?.get("cookie") ?? null, DEV_SESSION_COOKIE);
   const candidateToken = bearer ?? cookieToken;
   if (!candidateToken) {
+    recordAuthOutcome("denied");
     throw new AuthError("Authentication required.", 401, "missing_token");
   }
 
   const claims = verifyDevToken(candidateToken);
+  const role = await resolveLocalRole(claims.sub, claims.email);
   return {
     supabase: null,
     userId: claims.sub,
     email: claims.email,
+    role,
     authMode: "local_dev",
+    requestId,
   };
+}
+
+/** Optional auth principal resolver for public endpoints that optionally expose draft content to authors/admins. */
+export async function tryVerifyRequestPrincipal(
+  request: Request | undefined | null,
+): Promise<VerifiedAuthContext | null> {
+  try {
+    return await verifyRequestPrincipal(request);
+  } catch {
+    return null;
+  }
 }
 
 /** Fail-closed TanStack Start server-function middleware for all account operations. */
@@ -313,3 +443,35 @@ export const requireVerifiedAuth = createMiddleware({ type: "function" }).server
     return next({ context: authContext });
   },
 );
+
+function createRoleMiddleware(minimumRole: AppRole, label: string) {
+  return createMiddleware({ type: "function" }).server(async ({ next }) => {
+    const request = getRequest();
+    const authContext = await verifyRequestPrincipal(request);
+    if (!hasRoleAtLeast(authContext.role, minimumRole)) {
+      recordAuthOutcome("denied");
+      logEvent(
+        "warn",
+        "rbac",
+        "role_access_denied",
+        {
+          userRef: safeUserRef(authContext.userId),
+          actualRole: authContext.role,
+          requiredRole: minimumRole,
+        },
+        authContext.requestId,
+      );
+      throw new AuthError(`${label} privileges required.`, 403, "forbidden");
+    }
+    return next({ context: authContext });
+  });
+}
+
+/** Requires verified reviewer, author, or admin role (for independent rubric/evidence verification). */
+export const requireReviewerOrAdmin = createRoleMiddleware("reviewer", "Reviewer");
+
+/** Requires verified course author or admin role (for dynamic curriculum CMS mutations). */
+export const requireAuthorOrAdmin = createRoleMiddleware("author", "Course author or admin");
+
+/** Requires verified admin role (for RBAC role grants, audit logs, and operational telemetry). */
+export const requireAdmin = createRoleMiddleware("admin", "Administrator");

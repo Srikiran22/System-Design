@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_PG_INT4,
   bucketByDay,
   disciplineOf,
   heatmapGrid,
@@ -15,9 +16,26 @@ describe("initials signature source", () => {
     expect(initialsFrom("  ada  byron lovelace king ")).toBe("ABL");
     expect(initialsFrom("")).toBe("U");
   });
-  it("seed is deterministic", () => {
+  it("seed is deterministic and strictly clamped to PostgreSQL signed INT4 [1, 2_147_483_647]", () => {
     expect(seedFrom("SV")).toBe(seedFrom("SV"));
     expect(seedFrom("SV")).not.toBe(seedFrom("VS"));
+    const samples = [
+      "",
+      "U",
+      "SV",
+      "ZZZ",
+      "AAA",
+      "999",
+      "λΩ∑",
+      "a".repeat(200),
+      ...Array.from({ length: 1000 }, (_, i) => `user-${i}-${String.fromCharCode(65 + (i % 26))}`),
+    ];
+    for (const s of samples) {
+      const seed = seedFrom(s);
+      expect(Number.isInteger(seed)).toBe(true);
+      expect(seed).toBeGreaterThanOrEqual(1);
+      expect(seed).toBeLessThanOrEqual(MAX_PG_INT4);
+    }
   });
 });
 

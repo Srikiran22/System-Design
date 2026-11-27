@@ -1,22 +1,35 @@
-import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
-import { AsciiParticles } from "@/components/neet/ascii";
-import PathCard from "@/components/neet/PathCard";
-import { BlurText, SpotlightCard } from "@/components/neet/fx";
-import { LABS, PATHS, STAGES, allLessons } from "@/lib/neet/content";
+import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import Link from "@/components/neet/AppLink";
+import {
+  DISCIPLINES,
+  LABS,
+  flatLessons,
+  lessonHref,
+  lessonKey,
+  pathMinutes,
+} from "@/lib/neet/content";
+import { listCourses } from "@/lib/neet/curriculum.functions";
+import { firstOpenLesson, pathProgress } from "@/lib/neet/derive";
+import { bucketByDay, streaks } from "@/lib/neet/progress-math";
+import { useProgress } from "@/lib/neet/store";
+import type { Discipline, Path } from "@/lib/neet/types";
 
 export const Route = createFileRoute("/")({
+  loader: async () => listCourses({ data: {} }),
   head: () => ({
     meta: [
-      { title: "NEET: we ain't an academy, we're a group" },
+      { title: "From Scratch — System Design Learning Hub" },
       {
         name: "description",
         content:
-          "Learn systems thinking, system design and engineering by building. Short lessons, honest progress, real artifacts.",
+          "A hands-on, self-directed curriculum for building real distributed systems, engineering trade-offs, and production-ready artifacts.",
       },
-      { property: "og:title", content: "NEET: we ain't an academy, we're a group" },
+      { property: "og:title", content: "From Scratch — System Design Learning Hub" },
       {
         property: "og:description",
-        content: "Learn systems thinking, system design and engineering by building.",
+        content:
+          "Learn system design from scratch through structured paths, worked trade-offs, and rubric-backed engineering labs.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -25,142 +38,614 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const FILTERS = ["Systems thinking", "System design", "Engineering", "Labs", "Calibration"];
+const JOURNEY_STEPS = [
+  {
+    num: "01",
+    title: "The Problem",
+    body: "System design material is scattered across blog posts, papers, and interview scripts. The mental models rarely line up into one coherent frame.",
+    meta: "Search · Mental models",
+    href: "/paths/orientation-and-grounding",
+    activeDots: 1,
+  },
+  {
+    num: "02",
+    title: "Build It",
+    body: "Trace stocks, feedback loops, queues, replication, and backpressure from first principles instead of memorizing box diagrams.",
+    meta: "Know · Core mechanics",
+    href: "/paths",
+    activeDots: 2,
+  },
+  {
+    num: "03",
+    title: "Use It",
+    body: "Stress-test your assumptions under 10x surges, partial failures, and tight SLAs using deterministic trade-off scenarios and exercises.",
+    meta: "Adapt · Trade-off drills",
+    href: "/exercises",
+    activeDots: 3,
+  },
+  {
+    num: "04",
+    title: "Ship It",
+    body: "Produce review-ready engineering artifacts, ADRs, and a 6-milestone capstone dossier evaluated against transparent domain rubrics.",
+    meta: "Proceed · Real artifacts",
+    href: "/labs",
+    activeDots: 4,
+  },
+] as const;
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+function buildWeeklyActivity(dates: string[]): { day: string; count: number }[] {
+  const now = new Date();
+  const buckets = bucketByDay(dates);
+  const result: { day: string; count: number }[] = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - offset);
+    const iso = d.toISOString().slice(0, 10);
+    const label = DAY_LABELS[(d.getDay() + 6) % 7]!;
+    result.push({ day: label, count: buckets.get(iso) ?? 0 });
+  }
+  return result;
+}
 
 function Home() {
-  const stats = [
-    { k: String(PATHS.length), v: "Curriculum Paths" },
-    { k: "120", v: "Knowledge Volumes" },
-    { k: "320", v: "Primary Sources" },
-    { k: "73", v: "Design Exercises" },
-  ];
+  const { courses } = Route.useLoaderData();
+  const progress = useProgress();
+
+  const [workspaceTab, setWorkspaceTab] = useState<"current" | "all">("current");
+  const [selectedCourseSlug, setSelectedCourseSlug] = useState<string>(courses[0]?.slug ?? "");
+  const [selectedDomain, setSelectedDomain] = useState<"all" | Discipline>("all");
+
+  const activeCourse: Path | undefined =
+    courses.find((c) => c.slug === selectedCourseSlug) ?? courses[0];
+
+  const activeCourseLessons = useMemo(
+    () => (activeCourse ? flatLessons(activeCourse) : []),
+    [activeCourse],
+  );
+
+  const currentLessonEntry = useMemo(
+    () => (activeCourse ? firstOpenLesson(activeCourse, progress.completed) : undefined),
+    [activeCourse, progress.completed],
+  );
+
+  const upNextLessons = useMemo(() => {
+    if (!currentLessonEntry) return activeCourseLessons.slice(0, 2);
+    const idx = activeCourseLessons.findIndex(
+      (item) => item.lesson.slug === currentLessonEntry.lesson.slug,
+    );
+    return activeCourseLessons.slice(idx + 1, idx + 3);
+  }, [activeCourseLessons, currentLessonEntry]);
+
+  const featuredLab = useMemo(() => {
+    if (!currentLessonEntry) return LABS[0];
+    const lessonSkills = new Set(currentLessonEntry.lesson.skillIds);
+    return LABS.find((l) => lessonSkills.has(l.skillId)) ?? LABS[0];
+  }, [currentLessonEntry]);
+
+  const filteredCourses = useMemo(
+    () =>
+      selectedDomain === "all" ? courses : courses.filter((c) => c.discipline === selectedDomain),
+    [courses, selectedDomain],
+  );
+
+  const stats = useMemo(() => {
+    const allLessonKeys = courses.flatMap((c) =>
+      flatLessons(c).map((x) => lessonKey(c.slug, x.lesson.slug)),
+    );
+    const totalLessons = allLessonKeys.length;
+    const completedLessons = allLessonKeys.filter((k) => progress.completed.includes(k)).length;
+    const pct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+
+    const activityDates = [
+      ...Object.values(progress.completedAt),
+      ...progress.evidence.map((e) => e.at),
+    ]
+      .filter((iso): iso is string => typeof iso === "string" && iso.length >= 10)
+      .map((iso) => iso.slice(0, 10));
+
+    const streak = streaks(bucketByDay(activityDates), new Date());
+    const weekly = buildWeeklyActivity(activityDates);
+    const totalArtifacts =
+      Object.keys(progress.labs).length +
+      Object.keys(progress.scenarios).length +
+      Object.keys(progress.capstone).length;
+
+    return {
+      pct,
+      completedLessons,
+      totalLessons,
+      streak: streak.current,
+      totalArtifacts,
+      weekly,
+      maxWeekly: Math.max(1, ...weekly.map((w) => w.count)),
+    };
+  }, [courses, progress]);
+
+  const quickTabs = courses.slice(0, 2);
+
   return (
     <>
-      <section className="relative overflow-hidden bg-warm">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
-        >
-          <ClientOnly fallback={null}>
-            <AsciiParticles />
-          </ClientOnly>
-        </div>
-        <div className="relative mx-auto max-w-4xl px-5 pb-20 pt-24 text-center md:pt-32">
-          <span className="animate-rise inline-flex items-center gap-2 rounded-full border border-line bg-bg px-4 py-1.5 text-sm text-text shadow-[var(--shadow-soft)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-ok" />
-            <span className="shiny-text">Not in Education, Employment, or Training</span>
-          </span>
-          <h1 className="mt-7 text-5xl font-semibold leading-[1.05] text-text md:text-7xl">
-            <BlurText text="We ain't an academy." />
-            <br />
-            <BlurText text="We're a group." delay={300} className="text-muted" />
-          </h1>
-          <p className="animate-rise mx-auto mt-7 max-w-xl text-lg leading-8 text-muted [animation-delay:500ms]">
-            A self-built curriculum in <span className="text-text">systems thinking</span>,{" "}
-            <span className="text-text">system design</span> and{" "}
-            <span className="text-text">engineering</span>. Learn, build, and leave with work you
-            can show.
-          </p>
-          <div className="animate-rise mt-9 flex flex-wrap justify-center gap-3 [animation-delay:650ms]">
-            <Link to="/paths" className="btn-ink">
-              Start learning →
-            </Link>
-            <Link to="/library" className="btn-soft">
-              Browse the library
-            </Link>
-          </div>
-          <p className="mt-10 text-xs uppercase tracking-[0.25em] text-muted">
-            Search · Know · Adapt · Proceed
-          </p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5">
-        <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {stats.map((s) => (
-            <div key={s.v} className="rounded-3xl bg-surface p-6">
-              <dt className="text-sm text-muted">{s.v}</dt>
-              <dd className="mt-1 text-4xl font-semibold tabular-nums text-text">{s.k}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 pt-24" aria-labelledby="paths-h">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-accent">Paths</p>
-            <h2 id="paths-h" className="mt-1 text-4xl font-semibold">
-              Start anywhere. They connect.
-            </h2>
-          </div>
-          <Link to="/library" className="btn-soft text-sm">
-            Open the library
-          </Link>
-        </div>
-        <div className="mt-6 flex flex-wrap gap-2">
-          {FILTERS.map((f) => (
-            <span key={f} className="rounded-full bg-surface-2 px-4 py-1.5 text-sm text-text">
-              {f}
-            </span>
-          ))}
-        </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {PATHS.map((p) => (
-            <PathCard key={p.slug} path={p} />
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 pt-24" aria-labelledby="method-h">
-        <p className="text-sm font-medium text-accent">The method</p>
-        <h2 id="method-h" className="mt-1 text-4xl font-semibold">
-          Four stages, for every skill.
-        </h2>
-        <ol className="mt-8 grid gap-4 md:grid-cols-4">
-          {STAGES.map((s) => (
-            <li key={s.id}>
-              <SpotlightCard className="h-full p-6">
-                <div className="flex items-center gap-1.5" aria-hidden>
-                  {STAGES.map((x) => (
-                    <span
-                      key={x.id}
-                      className={`h-1.5 flex-1 rounded-full ${x.level <= s.level ? "bg-accent" : "bg-surface-2"}`}
-                    />
-                  ))}
-                </div>
-                <p className="mt-6 text-sm tabular-nums text-muted">Level {s.level}</p>
-                <h3 className="mt-1 text-2xl font-semibold">{s.label}</h3>
-                <p className="mt-2 text-muted">{s.meaning}</p>
-              </SpotlightCard>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 pt-24">
-        <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-3xl bg-ink p-10 text-bg md:p-12">
-            <p className="text-sm opacity-60">Why NEET</p>
-            <h2 className="mt-2 max-w-md text-4xl font-semibold leading-tight">
-              The label, taken back.
-            </h2>
-            <p className="mt-4 max-w-lg opacity-75">
-              NEET describes who is outside the system, not what they can do. No gatekeepers: every
-              lesson is short, every question asks how sure you are, and every path ends with
-              something you made.
+      {/* Hero & Interactive Workspace Section */}
+      <section className="px-4 py-12 sm:px-6 lg:px-8 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-14 text-center">
+            <span className="section-label">System Design | From Scratch</span>
+            <h1 className="section-title mx-auto max-w-4xl text-4xl text-text sm:text-5xl lg:text-6xl">
+              Learn system design from scratch. Stay ahead of what&apos;s next.
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-muted sm:text-lg">
+              A hands-on, self-directed curriculum for mastering systems thinking, distributed
+              architecture, and production-ready engineering judgment.
             </p>
           </div>
-          <div className="flex flex-col justify-between rounded-3xl bg-surface p-10">
+
+          {/* 4 Step Folder Cards */}
+          <div className="mb-16 grid grid-cols-1 gap-6 pt-3 md:grid-cols-2 lg:grid-cols-4">
+            {JOURNEY_STEPS.map((step) => (
+              <Link
+                key={step.num}
+                href={step.href}
+                className="folder-card group p-6 pt-7 text-left"
+              >
+                <span className="folder-tab">{step.num}</span>
+                <h2 className="font-display text-lg font-bold text-text transition-colors group-hover:text-accent">
+                  {step.title}
+                </h2>
+                <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">{step.body}</p>
+                <div className="mt-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                  <span className="flex items-center gap-1" aria-hidden>
+                    {[1, 2, 3, 4].map((dot) => (
+                      <span
+                        key={dot}
+                        className={`progress-segment ${dot <= step.activeDots ? "active" : ""}`}
+                      />
+                    ))}
+                  </span>
+                  <span className="truncate">{step.meta}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Interactive Curriculum Workspace */}
+          {activeCourse && (
+            <div className="overflow-hidden rounded-lg border border-line bg-surface-1">
+              <div
+                role="tablist"
+                aria-label="Curriculum workspace views"
+                className="flex flex-wrap items-center border-b border-line"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceTab === "current"}
+                  onClick={() => setWorkspaceTab("current")}
+                  className={`whitespace-nowrap px-5 py-3 text-sm font-medium transition-colors ${
+                    workspaceTab === "current"
+                      ? "border-b-2 border-accent bg-surface-2 text-accent"
+                      : "text-muted hover:text-text"
+                  }`}
+                >
+                  Current Lesson
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceTab === "all"}
+                  onClick={() => setWorkspaceTab("all")}
+                  className={`whitespace-nowrap px-5 py-3 text-sm font-medium transition-colors ${
+                    workspaceTab === "all"
+                      ? "border-b-2 border-accent bg-surface-2 text-accent"
+                      : "text-muted hover:text-text"
+                  }`}
+                >
+                  All Lessons ({activeCourseLessons.length})
+                </button>
+
+                {quickTabs.length > 0 && (
+                  <div className="ml-auto flex flex-wrap items-center border-t border-line sm:border-l sm:border-t-0">
+                    {quickTabs.map((course) => {
+                      const isSelected = course.slug === activeCourse.slug;
+                      return (
+                        <button
+                          key={course.slug}
+                          type="button"
+                          onClick={() => setSelectedCourseSlug(course.slug)}
+                          className={`whitespace-nowrap px-4 py-3 text-xs font-medium transition-colors sm:text-sm ${
+                            isSelected ? "bg-surface-2 text-text" : "text-muted hover:text-text"
+                          }`}
+                        >
+                          Path: {course.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {workspaceTab === "current" ? (
+                <div className="p-6">
+                  <div className="flex flex-col gap-6 lg:flex-row">
+                    {/* Left Column: Active Lesson + Up Next */}
+                    <div className="flex flex-col gap-6 lg:w-1/3">
+                      {currentLessonEntry && (
+                        <div className="rounded-lg border border-line bg-surface-2 p-6">
+                          <div className="mb-4 flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-surface-3 font-mono text-sm text-muted">
+                              {String(
+                                activeCourseLessons.findIndex(
+                                  (item) => item.lesson.slug === currentLessonEntry.lesson.slug,
+                                ) + 1,
+                              ).padStart(2, "0")}
+                            </div>
+                            <div className="min-w-0">
+                              <h3 className="font-ui text-base font-bold text-text">
+                                {currentLessonEntry.lesson.title}
+                              </h3>
+                              <p className="mt-1 text-xs text-muted">
+                                {currentLessonEntry.module.title} ·{" "}
+                                {currentLessonEntry.lesson.minutes} min read
+                              </p>
+                            </div>
+                          </div>
+                          <p className="mb-6 text-sm leading-relaxed text-muted">
+                            {currentLessonEntry.lesson.summary}
+                          </p>
+                          <Link
+                            href={lessonHref(activeCourse.slug, currentLessonEntry.lesson.slug)}
+                            className="btn-ink w-full justify-center text-sm"
+                          >
+                            Start Lesson
+                          </Link>
+                        </div>
+                      )}
+
+                      <div className="rounded-lg border border-line bg-surface-2 p-6">
+                        <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted">
+                          Up Next
+                        </h4>
+                        <div className="space-y-3">
+                          {upNextLessons.length === 0 ? (
+                            <p className="text-sm text-muted">
+                              You&apos;re at the final lesson in this path.
+                            </p>
+                          ) : (
+                            upNextLessons.map((item, idx) => (
+                              <Link
+                                key={item.lesson.slug}
+                                href={lessonHref(activeCourse.slug, item.lesson.slug)}
+                                className="flex items-start gap-3 rounded border border-line bg-surface-1 p-3 transition-colors hover:border-accent"
+                              >
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-3 font-mono text-xs text-muted">
+                                  {String(idx + 2).padStart(2, "0")}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-semibold text-text">
+                                    {item.lesson.title}
+                                  </div>
+                                  <div className="mt-0.5 text-xs text-muted">
+                                    {item.lesson.minutes} min · {activeCourse.level}
+                                  </div>
+                                </div>
+                                <span aria-hidden className="self-center text-muted">
+                                  →
+                                </span>
+                              </Link>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Lesson & Path Overview */}
+                    <div className="flex lg:w-2/3">
+                      <div className="flex w-full flex-col justify-between rounded-lg border border-line bg-surface-2 p-6">
+                        <div>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h2 className="font-display text-2xl font-bold text-text">
+                              Lesson Overview
+                            </h2>
+                            <Link
+                              href={`/paths/${activeCourse.slug}`}
+                              className="text-xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                            >
+                              Full syllabus →
+                            </Link>
+                          </div>
+                          <div className="dot-grid my-5 h-2 w-full" aria-hidden />
+                          <p className="text-sm leading-relaxed text-muted">
+                            {activeCourse.about[0] ?? activeCourse.tagline}
+                          </p>
+
+                          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="rounded border border-line bg-surface-3 p-4">
+                              <div className="text-xs uppercase tracking-wider text-muted">
+                                Difficulty
+                              </div>
+                              <div className="mt-1 text-sm font-semibold text-text">
+                                {activeCourse.level} · {DISCIPLINES[activeCourse.discipline].label}
+                              </div>
+                            </div>
+                            <div className="rounded border border-line bg-surface-3 p-4">
+                              <div className="text-xs uppercase tracking-wider text-muted">
+                                Estimated Time
+                              </div>
+                              <div className="mt-1 text-sm font-semibold tabular-nums text-text">
+                                {currentLessonEntry
+                                  ? `${currentLessonEntry.lesson.minutes} min lesson · ~${Math.max(1, Math.round(pathMinutes(activeCourse) / 60))}h path`
+                                  : `~${Math.max(1, Math.round(pathMinutes(activeCourse) / 60))}h total`}
+                              </div>
+                            </div>
+                          </div>
+
+                          {activeCourse.outcomes.length > 0 && (
+                            <div className="mt-6">
+                              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                                Outcomes you build
+                              </p>
+                              <ul className="mt-2.5 space-y-1.5 text-sm text-text/90">
+                                {activeCourse.outcomes.slice(0, 3).map((outcome) => (
+                                  <li key={outcome} className="flex items-start gap-2.5">
+                                    <span aria-hidden className="text-accent">
+                                      →
+                                    </span>
+                                    <span>{outcome}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {featuredLab && (
+                          <div className="mt-8 border-t border-line pt-6">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-surface-3 font-mono text-xs font-bold text-accent">
+                                LAB
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-text">
+                                  Exercise: {featuredLab.title}
+                                </div>
+                                <div className="mt-0.5 text-xs text-muted">
+                                  ~{featuredLab.minutes} min · Rubric-scored engineering artifact
+                                </div>
+                              </div>
+                              <Link href={`/labs#${featuredLab.id}`} className="btn-soft text-sm">
+                                Open Lab
+                              </Link>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-display text-xl font-bold text-text">
+                        {activeCourse.title}
+                      </h3>
+                      <p className="text-sm text-muted">{activeCourse.tagline}</p>
+                    </div>
+                    <Link href={`/paths/${activeCourse.slug}`} className="btn-soft text-xs">
+                      Open Path Overview
+                    </Link>
+                  </div>
+                  <ol className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {activeCourseLessons.map((item, idx) => {
+                      const done = progress.completed.includes(
+                        lessonKey(activeCourse.slug, item.lesson.slug),
+                      );
+                      return (
+                        <li key={item.lesson.slug}>
+                          <Link
+                            href={lessonHref(activeCourse.slug, item.lesson.slug)}
+                            className="flex items-start gap-3 rounded-lg border border-line bg-surface-2 p-4 transition-colors hover:border-accent"
+                          >
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded font-mono text-xs font-semibold ${
+                                done ? "bg-accent text-bg" : "bg-surface-3 text-muted"
+                              }`}
+                            >
+                              {done ? "✓" : String(idx + 1).padStart(2, "0")}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-text">
+                                {item.lesson.title}
+                              </div>
+                              <div className="mt-0.5 line-clamp-1 text-xs text-muted">
+                                {item.module.title} · {item.lesson.minutes} min
+                              </div>
+                            </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Curriculum Explorer Section */}
+      <section
+        id="curriculum"
+        className="border-y border-line bg-surface-1 px-4 py-16 sm:px-6 lg:px-8"
+      >
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-12 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-end">
             <div>
-              <h2 className="text-3xl font-semibold leading-tight">Show work, not badges.</h2>
-              <p className="mt-3 text-muted">
-                Mastery comes from evidence and fades when unused, so it stays true.
+              <span className="section-label">Curriculum Explorer</span>
+              <h2 className="section-title text-3xl text-text sm:text-4xl">
+                Build things people actually use
+              </h2>
+              <p className="mt-2 max-w-xl text-sm text-muted sm:text-base">
+                Choose the discipline you want to deepen. Each path pairs concise lessons with
+                worked engineering decisions and a concrete artifact.
               </p>
             </div>
-            <Link to="/me" className="btn-ink mt-8 self-start">
-              See my scale
-            </Link>
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="domain-filter" className="sr-only">
+                Filter curriculum by domain
+              </label>
+              <select
+                id="domain-filter"
+                value={selectedDomain}
+                onChange={(e) => setSelectedDomain(e.target.value as "all" | Discipline)}
+                className="rounded-md border border-line bg-surface-2 px-4 py-2.5 text-sm text-text focus:border-accent focus:outline-none"
+              >
+                <option value="all">All domains ({courses.length})</option>
+                {(Object.keys(DISCIPLINES) as Discipline[]).map((d) => (
+                  <option key={d} value={d}>
+                    {DISCIPLINES[d].label}
+                  </option>
+                ))}
+              </select>
+              <Link href="/paths" className="btn-ink text-sm">
+                View all paths
+              </Link>
+            </div>
+          </div>
+
+          {filteredCourses.length === 0 ? (
+            <div className="rounded-lg border border-line bg-surface-2 p-10 text-center">
+              <p className="text-sm text-muted">
+                No published paths in this domain yet. Import a course bundle or switch domain.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredCourses.map((course) => {
+                const prog = pathProgress(course, progress.completed);
+                const pct = Math.round(prog.ratio * 100);
+                return (
+                  <Link
+                    key={course.slug}
+                    href={`/paths/${course.slug}`}
+                    className="folder-card group block p-6 pt-7"
+                  >
+                    <span className="folder-tab">{DISCIPLINES[course.discipline].label}</span>
+                    <h3 className="font-display text-lg font-bold text-text transition-colors group-hover:text-accent">
+                      {course.title}
+                    </h3>
+                    <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">
+                      {course.tagline}
+                    </p>
+                    <div className="mt-6 flex items-center justify-between border-t border-line pt-4">
+                      <span className="text-xs font-bold uppercase tracking-wider text-accent">
+                        {course.modules.length} {course.modules.length === 1 ? "module" : "modules"}{" "}
+                        · {prog.total} lessons
+                      </span>
+                      <span className="text-xs tabular-nums text-muted">{pct}% complete</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Stats & Weekly Activity Section */}
+      <section id="analytics" className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-line bg-surface-2 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-muted">
+                Total Progress
+              </div>
+              <div className="dot-matrix mt-1 text-3xl font-bold text-text">{stats.pct}%</div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-3">
+                <div
+                  className="h-full bg-accent transition-[width] duration-300"
+                  style={{ width: `${stats.pct}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-line bg-surface-2 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-muted">
+                Lessons Complete
+              </div>
+              <div className="dot-matrix mt-1 text-3xl font-bold text-text">
+                {stats.completedLessons}
+              </div>
+              <div className="mt-2 text-xs tabular-nums text-muted">
+                of {stats.totalLessons} total
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-line bg-surface-2 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-muted">
+                Current Streak
+              </div>
+              <div className="dot-matrix mt-1 text-3xl font-bold text-electric">{stats.streak}</div>
+              <div className="mt-2 text-xs text-muted">
+                {stats.streak === 1 ? "day active" : "days active"}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-line bg-surface-2 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-muted">
+                Artifacts Logged
+              </div>
+              <div className="dot-matrix mt-1 text-3xl font-bold text-text">
+                {stats.totalArtifacts}
+              </div>
+              <div className="mt-2 text-xs text-muted">labs, scenarios &amp; capstone</div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-line bg-surface-2 p-6">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="section-label">Activity</span>
+                <h3 className="font-display text-xl font-bold text-text">Weekly Activity</h3>
+              </div>
+              <Link href="/me" className="text-sm font-medium text-accent hover:underline">
+                View full analytics →
+              </Link>
+            </div>
+
+            <div
+              className="flex h-48 items-end gap-3 pt-4"
+              role="img"
+              aria-label="Weekly learning activity chart for the past 7 days"
+            >
+              {stats.weekly.map((entry) => {
+                const heightPct =
+                  entry.count > 0
+                    ? Math.max(18, Math.round((entry.count / stats.maxWeekly) * 100))
+                    : 6;
+                return (
+                  <div
+                    key={entry.day}
+                    className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+                  >
+                    <div className="flex w-full flex-1 items-end">
+                      <div
+                        className={`w-full rounded-t rounded-b-sm transition-all duration-300 ${
+                          entry.count > 0 ? "bg-accent hover:opacity-85" : "bg-surface-3"
+                        }`}
+                        style={{ height: `${heightPct}%` }}
+                        title={`${entry.day}: ${entry.count} ${entry.count === 1 ? "activity" : "activities"}`}
+                      />
+                    </div>
+                    <div className="font-mono text-[11px] tabular-nums text-text/70">
+                      {entry.count}
+                    </div>
+                    <div className="text-[11px] text-muted">{entry.day}</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>

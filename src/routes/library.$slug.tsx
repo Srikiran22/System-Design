@@ -96,7 +96,8 @@ function SourceReferenceCard({ s }: { s: EnrichedSource }) {
 }
 
 function ArticlePage() {
-  const { article, prev, next, fileMap, explicitSources, relatedSources } = Route.useLoaderData();
+  const { article, prev, next, fileMap, explicitSources, relatedSources, citationMap } =
+    Route.useLoaderData();
   const headings = Array.from(article.body.matchAll(/^##\s+(.+)$/gm)).map((m) =>
     m[1]!.replace(/[*_`]/g, "").trim(),
   );
@@ -149,7 +150,7 @@ function ArticlePage() {
         )}
 
         <div className="mt-6 max-w-[72ch]">
-          <Markdown body={article.body} fileMap={fileMap} />
+          <Markdown body={article.body} fileMap={fileMap} citationMap={citationMap} />
         </div>
 
         {explicitSources.length > 0 && (

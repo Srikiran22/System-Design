@@ -7,13 +7,12 @@ export default function Callout({
   children: React.ReactNode;
   tone?: "note" | "warn" | undefined;
 }) {
-  const color = tone === "warn" ? "border-warn text-warn" : "border-accent text-accent";
+  const borderColor = tone === "warn" ? "border-warn/50" : "border-line";
+  const labelColor = tone === "warn" ? "text-warn" : "text-accent";
   return (
-    <aside className={`my-6 rounded-lg border-l-4 bg-surface p-5 ${color.split(" ")[0]}`}>
-      <p className={`font-label text-sm uppercase tracking-widest ${color.split(" ")[1]}`}>
-        {title}
-      </p>
-      <p className="mt-2 text-text">{children}</p>
+    <aside className={`my-6 rounded-lg border bg-surface-2 p-5 ${borderColor}`}>
+      <p className={`section-label mb-1 ${labelColor}`}>{title}</p>
+      <p className="text-sm leading-relaxed text-text">{children}</p>
     </aside>
   );
 }

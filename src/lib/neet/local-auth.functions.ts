@@ -6,13 +6,16 @@ import {
   DEV_SESSION_COOKIE,
   extractBearerToken,
   extractCookie,
+  extractRequestId,
   hashPassword,
   isLocalDevAuthAllowed,
   signDevToken,
   verifyDevToken,
   verifyPassword,
 } from "./auth-server";
-import { logEvent } from "./logger";
+import { hashForLog, logEvent, safeUserRef } from "./logger";
+import { recordAuthOutcome } from "./metrics.server";
+import { checkRateLimit, extractClientKey } from "./rate-limit.server";
 
 export interface LocalAuthSessionPayload {
   access_token: string;
@@ -25,7 +28,8 @@ export interface LocalAuthSessionPayload {
 }
 
 export type LocalAuthResult<T> =
-  { data: T; error: null } | { data: null; error: { code: string; message: string } };
+  | { data: T; error: null }
+  | { data: null; error: { code: string; message: string; retryAfterSeconds?: number } };
 
 function buildCookieHeader(token: string | null, request: Request | undefined): string {
   const proto = request?.headers?.get("x-forwarded-proto") ?? "";
@@ -66,8 +70,23 @@ export const localSignUp = createServerFn({ method: "POST" })
     const blocked = ensureDevAuthEnabled();
     if (blocked) return blocked;
 
-    const { localDb } = await import("./db.server");
+    const req = getRequest();
+    const requestId = extractRequestId(req);
     const email = data.email.toLowerCase();
+    const rl = checkRateLimit("auth", `signup:${extractClientKey(req)}:${hashForLog(email)}`);
+    if (!rl.allowed) {
+      setResponseHeader("Retry-After", String(rl.retryAfterSeconds));
+      return {
+        data: null,
+        error: {
+          code: "rate_limited",
+          message: `Too many signup attempts. Try again in ${rl.retryAfterSeconds}s.`,
+          retryAfterSeconds: rl.retryAfterSeconds,
+        },
+      };
+    }
+
+    const { localDb } = await import("./db.server");
     const existing = localDb.findLocalAuthUserByEmail(email);
     if (existing) {
       return {
@@ -93,9 +112,9 @@ export const localSignUp = createServerFn({ method: "POST" })
     });
 
     const token = signDevToken({ sub: id, email, display_name: displayName });
-    const req = getRequest();
     setResponseHeader("Set-Cookie", buildCookieHeader(token, req));
-    logEvent("info", "local_auth", "signup_success", { userId: id });
+    recordAuthOutcome("signin_success");
+    logEvent("info", "local_auth", "signup_success", { userRef: safeUserRef(id) }, requestId);
 
     return {
       data: {
@@ -117,12 +136,28 @@ export const localSignIn = createServerFn({ method: "POST" })
     const blocked = ensureDevAuthEnabled();
     if (blocked) return blocked;
 
-    const { localDb } = await import("./db.server");
+    const req = getRequest();
+    const requestId = extractRequestId(req);
     const email = data.email.toLowerCase();
+    const rl = checkRateLimit("auth", `signin:${extractClientKey(req)}:${hashForLog(email)}`);
+    if (!rl.allowed) {
+      setResponseHeader("Retry-After", String(rl.retryAfterSeconds));
+      return {
+        data: null,
+        error: {
+          code: "rate_limited",
+          message: `Too many sign-in attempts. Try again in ${rl.retryAfterSeconds}s.`,
+          retryAfterSeconds: rl.retryAfterSeconds,
+        },
+      };
+    }
+
+    const { localDb } = await import("./db.server");
     const stored = localDb.findLocalAuthUserByEmail(email);
 
     if (!stored || !verifyPassword(data.password, stored.password_hash)) {
-      logEvent("warn", "local_auth", "signin_failed", { reason: "invalid_credentials" });
+      recordAuthOutcome("signin_failure");
+      logEvent("warn", "local_auth", "signin_failed", { reason: "invalid_credentials" }, requestId);
       return {
         data: null,
         error: {
@@ -137,9 +172,15 @@ export const localSignIn = createServerFn({ method: "POST" })
       email: stored.email,
       display_name: stored.display_name,
     });
-    const req = getRequest();
     setResponseHeader("Set-Cookie", buildCookieHeader(token, req));
-    logEvent("info", "local_auth", "signin_success", { userId: stored.id });
+    recordAuthOutcome("signin_success");
+    logEvent(
+      "info",
+      "local_auth",
+      "signin_success",
+      { userRef: safeUserRef(stored.id) },
+      requestId,
+    );
 
     return {
       data: {
@@ -206,6 +247,7 @@ export const localUpdatePassword = createServerFn({ method: "POST" })
     if (blocked) return blocked;
 
     const req = getRequest();
+    const requestId = extractRequestId(req);
     const token =
       extractBearerToken(req) ??
       extractCookie(req?.headers?.get("cookie") ?? null, DEV_SESSION_COOKIE);
@@ -218,8 +260,27 @@ export const localUpdatePassword = createServerFn({ method: "POST" })
 
     try {
       const claims = verifyDevToken(token);
+      const rl = checkRateLimit("auth", `pw:${claims.sub}`);
+      if (!rl.allowed) {
+        setResponseHeader("Retry-After", String(rl.retryAfterSeconds));
+        return {
+          data: null,
+          error: {
+            code: "rate_limited",
+            message: `Too many password change attempts. Try again in ${rl.retryAfterSeconds}s.`,
+            retryAfterSeconds: rl.retryAfterSeconds,
+          },
+        };
+      }
       const { localDb } = await import("./db.server");
       localDb.updateLocalAuthPassword(claims.sub, hashPassword(data.password));
+      logEvent(
+        "info",
+        "local_auth",
+        "password_updated",
+        { userRef: safeUserRef(claims.sub) },
+        requestId,
+      );
       return { data: { updated: true }, error: null };
     } catch {
       return {

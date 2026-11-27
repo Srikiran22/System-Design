@@ -3,24 +3,27 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import Link from "@/components/neet/AppLink";
 import { PageHeader, Field, LoadError } from "@/components/neet/ui";
-import { getHealth } from "@/lib/neet/library.functions";
+import { getHealth, getLiveness } from "@/lib/neet/library.functions";
 import { getAuthenticatedDiagnostics } from "@/lib/neet/account.functions";
 import { useSession } from "@/hooks/use-session";
 import { pageHead } from "@/lib/neet/meta";
 
 export const Route = createFileRoute("/health")({
-  loader: () => getHealth(),
+  loader: async () => {
+    const [liveness, health] = await Promise.all([getLiveness(), getHealth()]);
+    return { liveness, health };
+  },
   head: () =>
     pageHead(
       "Service Status",
-      "Public service liveness, knowledge pack provenance summary, and authenticated account diagnostics.",
+      "Separated process liveness, service readiness, knowledge pack provenance summary, and authenticated account diagnostics.",
     ),
   errorComponent: ({ error }) => <LoadError error={error} />,
   component: SystemHealthPage,
 });
 
 function SystemHealthPage() {
-  const health = Route.useLoaderData();
+  const { liveness, health } = Route.useLoaderData();
   const { user } = useSession();
   const fetchDiag = useServerFn(getAuthenticatedDiagnostics);
 
@@ -41,13 +44,17 @@ function SystemHealthPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-5 md:py-16">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <PageHeader eyebrow="Service Readiness" title="Platform Status & Provenance">
-          Public liveness check and canonical knowledge pack integrity. Internal runtime paths and
-          account totals are intentionally omitted from public telemetry.
+        <PageHeader eyebrow="Service Liveness & Readiness" title="Platform Status & Provenance">
+          Separated zero-DB process liveness and canonical knowledge pack readiness. Internal
+          runtime paths and account totals are intentionally omitted from public telemetry.
         </PageHeader>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            LIVENESS: {liveness.status.toUpperCase()}
+          </span>
           <span
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium border ${
+            className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium border ${
               isHealthy
                 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                 : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
@@ -56,7 +63,7 @@ function SystemHealthPage() {
             <span
               className={`h-2 w-2 rounded-full ${isHealthy ? "bg-emerald-500" : "bg-amber-500"}`}
             />
-            {health.status.toUpperCase()}
+            READINESS: {health.status.toUpperCase()}
           </span>
         </div>
       </div>
@@ -84,7 +91,7 @@ function SystemHealthPage() {
             {health.authMode === "supabase" ? "Supabase Cloud" : "Local Dev Mode"}
           </p>
           <p className="mt-1 text-xs text-muted">
-            Cloud status: {health.supabaseReadiness.replace("_", " ")}
+            Cloud status: {health.supabaseReadiness.replace("_", " ")} · Cloud SQLite-free
           </p>
         </div>
 

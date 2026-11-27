@@ -7,7 +7,7 @@ import { useMe } from "@/hooks/use-me";
 import { exportDossier } from "@/lib/neet/account.functions";
 import { computeAll } from "@/lib/neet/scale";
 import { readProgressSnapshot } from "@/lib/neet/store";
-import { useSyncStatus } from "@/lib/neet/sync-outbox";
+import { requestManualSyncRetry, useSyncStatus } from "@/lib/neet/sync-outbox";
 import { useState } from "react";
 
 function SyncBadge() {
@@ -21,41 +21,71 @@ function SyncBadge() {
           dot: "bg-emerald-500",
           cls: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
           label: sync.lastSyncedAt ? "Synced to account" : "Account connected",
+          canRetry: false,
         };
       case "syncing":
         return {
           dot: "bg-sky-500 animate-pulse",
           cls: "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-400",
           label: pending > 0 ? `Syncing ${pending} item${pending === 1 ? "" : "s"}…` : "Syncing…",
+          canRetry: false,
+        };
+      case "pending":
+        return {
+          dot: "bg-sky-500",
+          cls: "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+          label: `Pending sync (${pending} queued)`,
+          canRetry: true,
+        };
+      case "partially_synced":
+        return {
+          dot: "bg-amber-500",
+          cls: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+          label: `Partially synced · ${pending} kept locally`,
+          canRetry: true,
         };
       case "offline":
         return {
           dot: "bg-amber-500",
           cls: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400",
           label: pending > 0 ? `Offline · ${pending} queued safely` : "Offline mode",
+          canRetry: false,
         };
-      case "error":
+      case "needs_attention":
         return {
           dot: "bg-rose-500",
           cls: "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-400",
-          label: `Retry pending (${pending} queued)`,
+          label: `Sync needs attention (${pending} queued)`,
+          canRetry: true,
         };
       default:
         return {
           dot: "bg-muted",
           cls: "border-line bg-surface text-muted",
           label: "Local session",
+          canRetry: false,
         };
     }
   })();
 
   return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${badge.cls}`}
-      title={sync.lastError ?? undefined}
-    >
-      <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
-      {badge.label}
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${badge.cls}`}
+        title={sync.lastNotice ?? sync.lastError ?? undefined}
+      >
+        <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
+        {badge.label}
+      </span>
+      {badge.canRetry && (
+        <button
+          type="button"
+          onClick={requestManualSyncRetry}
+          className="text-xs font-medium text-accent underline underline-offset-4 hover:text-text"
+        >
+          Retry
+        </button>
+      )}
     </span>
   );
 }
@@ -73,11 +103,13 @@ function MePage() {
       if (res.data) {
         const bundle = {
           ...res.data,
+          targetRoleId: localSnap.targetRoleId ?? null,
           competencySnapshot: competencySummary,
           artifacts: {
             rubricLabs: localSnap.labAttempts,
             scenarios: localSnap.scenarios,
             capstoneMilestones: localSnap.capstone,
+            capstoneChangeImpact: localSnap.capstoneChangeImpact ?? null,
           },
         };
         const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });

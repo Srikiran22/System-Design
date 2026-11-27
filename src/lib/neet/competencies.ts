@@ -1131,3 +1131,408 @@ export function validateCompetencyGraph(): CompetencyGraphValidation {
     },
   };
 }
+
+/* ---------- INCOSE SECF 2e Crosswalk (16 NEET skills -> 37-competency reference) ---------- */
+
+export type CrosswalkMappingType = "direct" | "partial" | "supporting" | "unmapped";
+
+export interface IncoseCrosswalkEntry {
+  neetCompetencyId: string;
+  incoseCompetencyId: string;
+  incoseDomain: "Core" | "Technical" | "Management" | "Professional" | "Integrating";
+  incoseTitle: string;
+  mappingType: CrosswalkMappingType;
+  rationale: string;
+  indicatorRefs: string[];
+  sourceEdition: "INCOSE SECF 2e";
+  reviewedAt: string;
+}
+
+export const INCOSE_CROSSWALK_NOTICE =
+  "NEET covers a tailored 16-competency subset mapped explicitly to INCOSE SECF 2nd Edition (37 competencies across 5 domains). Unmapped professional/programmatic competencies (e.g., Acquisition, Contracting, Negotiation, Coaching) remain intentionally outside this self-directed technical curriculum.";
+
+export const INCOSE_CROSSWALK: IncoseCrosswalkEntry[] = [
+  {
+    neetCompetencyId: "st-stocks",
+    incoseCompetencyId: "INCOSE-CORE-01",
+    incoseDomain: "Core",
+    incoseTitle: "Systems Thinking",
+    mappingType: "direct",
+    rationale:
+      "Stocks, flows, and accumulation delays directly address Core Systems Thinking fundamentals.",
+    indicatorRefs: ["SECF2e Core: Systems Thinking — Awareness/Supervised Practitioner"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "st-loops",
+    incoseCompetencyId: "INCOSE-CORE-01",
+    incoseDomain: "Core",
+    incoseTitle: "Systems Thinking",
+    mappingType: "direct",
+    rationale:
+      "Causal loop polarity, non-linear feedback, and delay-induced oscillation directly map to Core Systems Thinking.",
+    indicatorRefs: ["SECF2e Core: Systems Thinking — Practitioner"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "st-leverage",
+    incoseCompetencyId: "INCOSE-CORE-04",
+    incoseDomain: "Core",
+    incoseTitle: "Critical Thinking",
+    mappingType: "partial",
+    rationale:
+      "Ranking structural interventions over parameter tweaks supports Critical & Systems Thinking, without covering organizational governance policy.",
+    indicatorRefs: ["SECF2e Core: Critical Thinking — Intervention Evaluation"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "st-boundaries",
+    incoseCompetencyId: "INCOSE-TECH-01",
+    incoseDomain: "Technical",
+    incoseTitle: "Requirements Definition",
+    mappingType: "partial",
+    rationale:
+      "Boundary critique and stakeholder elicitation cover operational context framing leading into Requirements Definition.",
+    indicatorRefs: ["SECF2e Technical: Requirements Definition — Context & Stakeholder Needs"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-requirements",
+    incoseCompetencyId: "INCOSE-TECH-01",
+    incoseDomain: "Technical",
+    incoseTitle: "Requirements Definition",
+    mappingType: "direct",
+    rationale:
+      "Verifiable ISO 29148 requirements, quantitative sizing budgets, and verification method allocation directly map to Requirements Definition.",
+    indicatorRefs: ["SECF2e Technical: Requirements Definition — Verifiable Spec & Sizing"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-data",
+    incoseCompetencyId: "INCOSE-TECH-02",
+    incoseDomain: "Technical",
+    incoseTitle: "System Architecting",
+    mappingType: "partial",
+    rationale:
+      "Covers software/data storage architecture, schema contracts, and migration safety within System Architecting.",
+    indicatorRefs: ["SECF2e Technical: System Architecting — Data & Interface Viewpoints"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-scale",
+    incoseCompetencyId: "INCOSE-TECH-03",
+    incoseDomain: "Technical",
+    incoseTitle: "Design For ... (Performance & Scalability)",
+    mappingType: "partial",
+    rationale:
+      "Addresses software scaling, caching staleness bounds, and load shedding as specialty quality-attribute design.",
+    indicatorRefs: ["SECF2e Technical: Design For — Performance & Capacity"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-reliability",
+    incoseCompetencyId: "INCOSE-TECH-03",
+    incoseDomain: "Technical",
+    incoseTitle: "Design For ... (Reliability & Resilience)",
+    mappingType: "direct",
+    rationale:
+      "Defense in depth, fault containment, error budgets, and SLOs directly align with Reliability/Resilience specialty engineering.",
+    indicatorRefs: ["SECF2e Technical: Design For — Reliability, Availability & Maintainability"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-consensus",
+    incoseCompetencyId: "INCOSE-TECH-02",
+    incoseDomain: "Technical",
+    incoseTitle: "System Architecting",
+    mappingType: "supporting",
+    rationale:
+      "Deep software distributed-systems specialty supporting fault-tolerant System Architecting under network partitions.",
+    indicatorRefs: ["SECF2e Technical: System Architecting — Fault-Tolerant Coordination"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "sd-trade-studies",
+    incoseCompetencyId: "INCOSE-MGMT-04",
+    incoseDomain: "Management",
+    incoseTitle: "Decision Management",
+    mappingType: "direct",
+    rationale:
+      "Swing-weighted MCDA trade studies, ADRs, and sensitivity sweeps directly implement INCOSE Decision Management.",
+    indicatorRefs: ["SECF2e Management: Decision Management — Trade Studies & Sensitivity"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-reading",
+    incoseCompetencyId: "INCOSE-TECH-04",
+    incoseDomain: "Technical",
+    incoseTitle: "Integration & Interfaces",
+    mappingType: "partial",
+    rationale:
+      "Tracing existing software architectures and interface boundaries builds practical Integration & Interface comprehension.",
+    indicatorRefs: ["SECF2e Technical: Integration — Interface & Dependency Analysis"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-testing",
+    incoseCompetencyId: "INCOSE-TECH-06",
+    incoseDomain: "Technical",
+    incoseTitle: "Verification & Validation",
+    mappingType: "direct",
+    rationale:
+      "Requirement-linked V&V pyramids, contract tests, and objective evidence coverage directly map to Verification & Validation.",
+    indicatorRefs: ["SECF2e Technical: Verification", "SECF2e Technical: Validation"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-shipping",
+    incoseCompetencyId: "INCOSE-TECH-08",
+    incoseDomain: "Technical",
+    incoseTitle: "Transition, Operation & Support",
+    mappingType: "partial",
+    rationale:
+      "Thin vertical slices, rollbacks, configuration baselines, and operational runbooks map partially to Transition & Operation.",
+    indicatorRefs: ["SECF2e Technical: Transition", "SECF2e Management: Configuration Management"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-assurance-gsn",
+    incoseCompetencyId: "INCOSE-TECH-07",
+    incoseDomain: "Technical",
+    incoseTitle: "Systems Modeling & Assurance Analysis",
+    mappingType: "partial",
+    rationale:
+      "Structured GSN claim-argument-evidence cases and defeater tracking cover assurance argumentation without formal tool certification.",
+    indicatorRefs: ["SECF2e Technical: Systems Modeling & Analysis — Assurance Cases"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-safety-stpa",
+    incoseCompetencyId: "INCOSE-TECH-03",
+    incoseDomain: "Technical",
+    incoseTitle: "Design For ... (System Safety)",
+    mappingType: "direct",
+    rationale:
+      "STPA control-structure hazard analysis, UCAs, and enforceable safety constraints directly address System Safety specialty engineering.",
+    indicatorRefs: ["SECF2e Technical: Design For — System Safety Engineering"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+  {
+    neetCompetencyId: "en-dependability-markov",
+    incoseCompetencyId: "INCOSE-TECH-03",
+    incoseDomain: "Technical",
+    incoseTitle: "Design For ... (RAM / Quantitative Dependability)",
+    mappingType: "direct",
+    rationale:
+      "Continuous-time Markov availability chains, MTBF/MTTR, Weibull analysis, and common-cause failure directly map to RAM specialty engineering.",
+    indicatorRefs: ["SECF2e Technical: Design For — Reliability, Availability & Maintainability"],
+    sourceEdition: "INCOSE SECF 2e",
+    reviewedAt: "2026-11-25",
+  },
+];
+
+const CROSSWALK_BY_SKILL = new Map(INCOSE_CROSSWALK.map((e) => [e.neetCompetencyId, e]));
+
+export function incoseCrosswalkFor(skillId: string): IncoseCrosswalkEntry | undefined {
+  return CROSSWALK_BY_SKILL.get(skillId);
+}
+
+/** Selected INCOSE SECF 2e domains intentionally outside NEET's current 16-skill technical scope. */
+export const INCOSE_INTENTIONALLY_UNMAPPED: {
+  id: string;
+  domain: string;
+  title: string;
+  note: string;
+}[] = [
+  {
+    id: "INCOSE-MGMT-01",
+    domain: "Management",
+    title: "Planning, Acquisition & Contracting",
+    note: "Organizational procurement and contract management are outside NEET's technical engineering track.",
+  },
+  {
+    id: "INCOSE-PROF-01",
+    domain: "Professional",
+    title: "Negotiation, Coaching & Organizational Leadership",
+    note: "Interpersonal leadership competencies require live workplace observation rather than self-paced labs.",
+  },
+  {
+    id: "INCOSE-INTG-01",
+    domain: "Integrating",
+    title: "Project Portfolio & Enterprise Investment Governance",
+    note: "Covered as reading reference in the Library, not assessed as a core hands-on competency.",
+  },
+];
+
+/* ---------- Provisional Role Profiles (Stage 4D) ---------- */
+
+export interface RoleProfile {
+  id: string;
+  title: string;
+  status: "provisional";
+  disclaimer: string;
+  summary: string;
+  requiredLevels: Record<string, 1 | 2 | 3 | 4>;
+}
+
+export const ROLE_PROFILES: RoleProfile[] = [
+  {
+    id: "early-career-se",
+    title: "Early-Career Systems Engineer",
+    status: "provisional",
+    disclaimer:
+      "Provisional educational profile — useful for structuring study priorities, not an accredited hiring or certification standard.",
+    summary:
+      "Builds foundational systems thinking, verifiable requirements, interface reading, V&V testing, and trade-study habits.",
+    requiredLevels: {
+      "st-stocks": 2,
+      "st-loops": 3,
+      "st-boundaries": 2,
+      "sd-requirements": 3,
+      "sd-trade-studies": 3,
+      "en-reading": 3,
+      "en-testing": 3,
+      "en-shipping": 2,
+    },
+  },
+  {
+    id: "software-systems-architect",
+    title: "Software / Systems Architect",
+    status: "provisional",
+    disclaimer:
+      "Provisional educational profile — focuses on distributed software architecture, reliability, and explicit trade-off defense.",
+    summary:
+      "Targets high-proficiency architecture framing, data contracts, caching/scaling, distributed consensus, resilience, and MCDA trade studies.",
+    requiredLevels: {
+      "st-loops": 3,
+      "st-leverage": 3,
+      "st-boundaries": 3,
+      "sd-requirements": 4,
+      "sd-data": 4,
+      "sd-scale": 3,
+      "sd-reliability": 4,
+      "sd-consensus": 3,
+      "sd-trade-studies": 4,
+      "en-reading": 3,
+      "en-shipping": 3,
+    },
+  },
+  {
+    id: "safety-reliability-assurance",
+    title: "Safety, Reliability & Assurance Engineer",
+    status: "provisional",
+    disclaimer:
+      "Provisional educational profile — prepares portfolio artifacts for review; does not replace sector regulatory qualification (DO-178C, ISO 26262, IEC 61508).",
+    summary:
+      "Emphasizes hazard analysis (STPA), GSN assurance cases, Markov dependability modeling, V&V independence, and verifiable requirements.",
+    requiredLevels: {
+      "st-loops": 3,
+      "st-boundaries": 3,
+      "sd-requirements": 3,
+      "sd-reliability": 4,
+      "sd-trade-studies": 3,
+      "en-testing": 4,
+      "en-assurance-gsn": 4,
+      "en-safety-stpa": 4,
+      "en-dependability-markov": 4,
+    },
+  },
+];
+
+export function roleProfileById(id?: string): RoleProfile | undefined {
+  if (!id) return undefined;
+  return ROLE_PROFILES.find((r) => r.id === id);
+}
+
+/* ---------- Deterministic Curriculum Gap Report (Stage 4C) ---------- */
+
+export interface CurriculumGapItem {
+  competencyId: string;
+  code: string;
+  title: string;
+  lessonCount: number;
+  labCount: number;
+  hasArtifactAssessment: boolean;
+  hasCrosswalk: boolean;
+  gaps: string[];
+}
+
+export interface CurriculumGapReport {
+  generatedAt: string;
+  totalCompetencies: number;
+  competenciesWithNoLessons: string[];
+  competenciesWithNoLabs: string[];
+  competenciesMissingArtifactAssessment: string[];
+  competenciesMissingCrosswalk: string[];
+  items: CurriculumGapItem[];
+}
+
+/** Deterministic audit of every competency's curriculum & assessment coverage. */
+export function computeCurriculumGapReport(): CurriculumGapReport {
+  const items: CurriculumGapItem[] = [];
+  const noLessons: string[] = [];
+  const noLabs: string[] = [];
+  const missingArtifact: string[] = [];
+  const missingCrosswalk: string[] = [];
+
+  for (const comp of COMPETENCIES) {
+    const lessons = lessonsForCompetency(comp.id);
+    const labs = labsForCompetency(comp.id);
+    const hasArtifact = labs.some((l) => l.evidenceType === "artifact");
+    const hasCrosswalk = CROSSWALK_BY_SKILL.has(comp.id);
+    const gaps: string[] = [];
+
+    if (lessons.length === 0) {
+      noLessons.push(comp.id);
+      gaps.push("No dedicated lesson mapped");
+    }
+    if (labs.length === 0) {
+      noLabs.push(comp.id);
+      gaps.push("Passive-only coverage (no hands-on lab)");
+    }
+    if (!hasArtifact) {
+      missingArtifact.push(comp.id);
+      gaps.push("No standalone artifact lab (relies on Capstone milestone for Proceed L4)");
+    }
+    if (!hasCrosswalk) {
+      missingCrosswalk.push(comp.id);
+      gaps.push("Missing INCOSE SECF 2e crosswalk entry");
+    }
+
+    items.push({
+      competencyId: comp.id,
+      code: comp.code,
+      title: comp.title,
+      lessonCount: lessons.length,
+      labCount: labs.length,
+      hasArtifactAssessment: hasArtifact,
+      hasCrosswalk,
+      gaps,
+    });
+  }
+
+  return {
+    generatedAt: "2026-11-25",
+    totalCompetencies: COMPETENCIES.length,
+    competenciesWithNoLessons: noLessons,
+    competenciesWithNoLabs: noLabs,
+    competenciesMissingArtifactAssessment: missingArtifact,
+    competenciesMissingCrosswalk: missingCrosswalk,
+    items,
+  };
+}

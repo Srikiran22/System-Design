@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { EvidenceType, VerificationTier } from "./types";
 
+export const MAX_SYNC_RETRIES = 6;
+
 export interface QueuedEventRow {
   kind: "lesson" | "lab" | "quiz" | "explain" | "article";
   ref: string;
@@ -30,14 +32,40 @@ export interface UserOutbox {
   includeSnapshot: boolean;
 }
 
-export type SyncStateKind = "guest" | "idle" | "syncing" | "synced" | "offline" | "error";
+export interface RecordEventsAck {
+  acceptedEventKeys: string[];
+  rejectedEventKeys: string[];
+  acceptedEvidenceKeys: string[];
+  rejectedEvidenceKeys: string[];
+  snapshotSaved: boolean;
+  snapshotConflict?: boolean;
+  snapshotVersion?: number;
+  serverVersion: number;
+  partialFailure: boolean;
+  syncedEvents: number;
+  syncedEvidence: number;
+  notice?: string;
+}
+
+export type SyncStateKind =
+  | "guest"
+  | "idle"
+  | "pending"
+  | "syncing"
+  | "synced"
+  | "partially_synced"
+  | "offline"
+  | "needs_attention";
 
 export interface SyncStatus {
   state: SyncStateKind;
   pendingEvents: number;
   pendingEvidence: number;
+  snapshotPending: boolean;
   lastSyncedAt: string | null;
+  lastServerVersion: number | null;
   lastError: string | null;
+  lastNotice: string | null;
   retryCount: number;
 }
 
@@ -57,6 +85,26 @@ function defaultStorage(): StorageLike | null {
   } catch {
     return null;
   }
+}
+
+export function eventOutboxKey(e: Pick<QueuedEventRow, "kind" | "ref">): string {
+  return `${e.kind}::${e.ref}`;
+}
+
+/**
+ * Server-authoritative verification tier sanitization for learner-submitted evidence.
+ * Learners can NEVER self-assign "reviewer-verified" or elevate self-scored rubrics
+ * to "rubric-evaluated" on the server.
+ */
+export function sanitizeLearnerVerificationTier(
+  evidenceType: EvidenceType,
+  requestedTier: VerificationTier,
+): VerificationTier {
+  if (evidenceType === "quiz") return "automated-check";
+  if (evidenceType === "variant" && requestedTier === "automated-check") {
+    return "automated-check";
+  }
+  return "self-assessed";
 }
 
 export function outboxKey(userId: string): string {
@@ -120,10 +168,10 @@ export function enqueueOutboxItems(
   // Deduplicate events by (kind, ref), keeping the earliest occurred_on date if already queued
   const evMap = new Map<string, QueuedEventRow>();
   for (const e of current.events) {
-    evMap.set(`${e.kind}::${e.ref}`, e);
+    evMap.set(eventOutboxKey(e), e);
   }
   for (const e of items.events ?? []) {
-    const k = `${e.kind}::${e.ref}`;
+    const k = eventOutboxKey(e);
     if (!evMap.has(k)) {
       evMap.set(k, {
         kind: e.kind,
@@ -152,7 +200,33 @@ export function enqueueOutboxItems(
   return next;
 }
 
-/** Remove acknowledged batch items from the user's outbox ONLY after server confirmation. */
+/**
+ * Remove ONLY server-confirmed event keys, evidence idempotency keys, and snapshot flag.
+ * Unconfirmed / rejected keys stay safely queued for retry.
+ */
+export function acknowledgeOutboxByKeys(
+  userId: string,
+  acked: {
+    acceptedEventKeys: string[];
+    acceptedEvidenceKeys: string[];
+    snapshotAcked: boolean;
+  },
+  storage: StorageLike | null = defaultStorage(),
+): UserOutbox {
+  const current = readOutbox(userId, storage);
+  const ackedEventSet = new Set(acked.acceptedEventKeys);
+  const ackedEvidenceSet = new Set(acked.acceptedEvidenceKeys);
+
+  const next: UserOutbox = {
+    events: current.events.filter((e) => !ackedEventSet.has(eventOutboxKey(e))),
+    evidence: current.evidence.filter((e) => !ackedEvidenceSet.has(e.idempotency_key)),
+    includeSnapshot: acked.snapshotAcked ? false : current.includeSnapshot,
+  };
+  writeOutbox(userId, next, storage);
+  return next;
+}
+
+/** Backward-compatible wrapper accepting row arrays. */
 export function acknowledgeOutboxBatch(
   userId: string,
   acked: {
@@ -162,17 +236,15 @@ export function acknowledgeOutboxBatch(
   },
   storage: StorageLike | null = defaultStorage(),
 ): UserOutbox {
-  const current = readOutbox(userId, storage);
-  const ackedEventKeys = new Set(acked.events.map((e) => `${e.kind}::${e.ref}`));
-  const ackedEvidenceKeys = new Set(acked.evidence.map((e) => e.idempotency_key));
-
-  const next: UserOutbox = {
-    events: current.events.filter((e) => !ackedEventKeys.has(`${e.kind}::${e.ref}`)),
-    evidence: current.evidence.filter((e) => !ackedEvidenceKeys.has(e.idempotency_key)),
-    includeSnapshot: acked.snapshotAcked ? false : current.includeSnapshot,
-  };
-  writeOutbox(userId, next, storage);
-  return next;
+  return acknowledgeOutboxByKeys(
+    userId,
+    {
+      acceptedEventKeys: acked.events.map(eventOutboxKey),
+      acceptedEvidenceKeys: acked.evidence.map((e) => e.idempotency_key),
+      snapshotAcked: Boolean(acked.snapshotAcked),
+    },
+    storage,
+  );
 }
 
 export function isUserBackfilled(
@@ -199,10 +271,16 @@ export function markUserBackfilled(
   }
 }
 
-/** Capped exponential backoff (2s, 4s, 8s, 16s, 32s, max 60s). */
-export function nextBackoffMs(retryCount: number): number {
-  const clamped = Math.max(0, Math.min(retryCount, 6));
-  return Math.min(60_000, 2_000 * 2 ** clamped);
+/**
+ * Bounded exponential backoff with ±20% jitter (2s, 4s, 8s, 16s, 32s, max 60s).
+ * Accepts optional jitterUnit in [0, 1] for deterministic unit testing.
+ */
+export function nextBackoffMs(retryCount: number, jitterUnit = Math.random()): number {
+  const clamped = Math.max(0, Math.min(retryCount, MAX_SYNC_RETRIES));
+  const base = Math.min(60_000, 2_000 * 2 ** clamped);
+  const unit = Math.max(0, Math.min(1, jitterUnit));
+  const jitterFactor = 0.8 + unit * 0.4; // 0.8 .. 1.2
+  return Math.max(1_000, Math.min(60_000, Math.round(base * jitterFactor)));
 }
 
 // --- Reactive Sync Status store for UI components ---
@@ -211,8 +289,11 @@ const DEFAULT_STATUS: SyncStatus = {
   state: "guest",
   pendingEvents: 0,
   pendingEvidence: 0,
+  snapshotPending: false,
   lastSyncedAt: null,
+  lastServerVersion: null,
   lastError: null,
+  lastNotice: null,
   retryCount: 0,
 };
 
@@ -242,4 +323,11 @@ export function useSyncStatus(): SyncStatus {
     getSyncStatus,
     () => DEFAULT_STATUS,
   );
+}
+
+/** Trigger an immediate retry flush from UI controls (e.g., SyncBadge). */
+export function requestManualSyncRetry(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("neet:sync-retry"));
+  }
 }

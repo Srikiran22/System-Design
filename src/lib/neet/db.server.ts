@@ -442,6 +442,8 @@ export function initTablesSync(db: DatabaseSync): void {
       rubric_scores_json TEXT,
       artifact_url TEXT,
       artifact_notes TEXT,
+      reviewer_id TEXT,
+      reviewed_at TEXT,
       occurred_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(user_id, idempotency_key)
@@ -451,9 +453,178 @@ export function initTablesSync(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS learner_state_snapshots (
       user_id TEXT PRIMARY KEY,
       state_json TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK(role IN ('learner','reviewer','author','admin')),
+      granted_by TEXT,
+      granted_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      actor_user_id TEXT,
+      action TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT,
+      outcome TEXT NOT NULL,
+      request_id TEXT,
+      meta_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS courses (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      discipline TEXT NOT NULL,
+      title TEXT NOT NULL,
+      tagline TEXT NOT NULL,
+      level TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      about_json TEXT NOT NULL,
+      outcomes_json TEXT NOT NULL,
+      artifact TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS courses_status_sort_idx ON courses(status, sort_order);
+
+    CREATE TABLE IF NOT EXISTS course_modules (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(course_id, slug)
+    );
+    CREATE INDEX IF NOT EXISTS course_modules_course_sort_idx ON course_modules(course_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS course_lessons (
+      id TEXT PRIMARY KEY,
+      module_id TEXT NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
+      course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      skill_ids_json TEXT NOT NULL,
+      blocks_json TEXT NOT NULL,
+      keep_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'published',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(course_id, slug)
+    );
+    CREATE INDEX IF NOT EXISTS course_lessons_module_sort_idx ON course_lessons(module_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS curriculum_competencies (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      title TEXT NOT NULL,
+      blurb TEXT NOT NULL,
+      definition TEXT NOT NULL,
+      bloom_target TEXT NOT NULL,
+      prerequisites_json TEXT NOT NULL DEFAULT '[]',
+      relations_json TEXT NOT NULL DEFAULT '[]',
+      framework_anchors_json TEXT NOT NULL DEFAULT '[]',
+      level_descriptors_json TEXT NOT NULL,
+      mapped_volumes_json TEXT NOT NULL DEFAULT '[]',
+      role_tags_json TEXT NOT NULL DEFAULT '[]',
+      crosswalk_json TEXT,
+      version TEXT NOT NULL DEFAULT '2.0.0',
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS curriculum_labs (
+      id TEXT PRIMARY KEY,
+      discipline TEXT NOT NULL,
+      skill_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      brief TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      steps_json TEXT NOT NULL,
+      twist TEXT NOT NULL,
+      artifact TEXT NOT NULL,
+      evidence_type TEXT NOT NULL,
+      rubric_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS curriculum_labs_status_sort_idx ON curriculum_labs(status, sort_order);
+
+    CREATE TABLE IF NOT EXISTS curriculum_scenarios (
+      id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      domain_context TEXT NOT NULL,
+      situation TEXT NOT NULL,
+      constraints_json TEXT NOT NULL,
+      question TEXT NOT NULL,
+      options_json TEXT NOT NULL,
+      invalidation_prompt TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS curriculum_capstones (
+      id TEXT PRIMARY KEY,
+      version TEXT NOT NULL DEFAULT '2.0.0',
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      disclaimer TEXT NOT NULL,
+      change_impact_json TEXT NOT NULL,
+      milestones_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS curriculum_role_profiles (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'provisional',
+      disclaimer TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      required_levels_json TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 100,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Safe idempotent column additions for pre-existing local SQLite database files
+  try {
+    db.exec("ALTER TABLE learner_state_snapshots ADD COLUMN version INTEGER NOT NULL DEFAULT 1;");
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec("ALTER TABLE learner_evidence ADD COLUMN reviewer_id TEXT;");
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec("ALTER TABLE learner_evidence ADD COLUMN reviewed_at TEXT;");
+  } catch {
+    /* column already exists */
+  }
 }
 
 function ensureSeededSync(db: DatabaseSync): void {
@@ -1240,20 +1411,181 @@ export function listLearnerEvidence(userId: string): LearnerEvidenceRecord[] {
     .all(userId) as unknown as LearnerEvidenceRecord[];
 }
 
-export function saveLearnerSnapshot(userId: string, stateJson: string): Result<true> {
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export function listProgressEventsPaginated(
+  userId: string,
+  limit = 50,
+  offset = 0,
+): PaginatedResult<UserEvent> {
+  const db = getDatabase();
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const total = (
+    db.prepare("SELECT COUNT(*) as c FROM progress_events WHERE user_id = ?").get(userId) as {
+      c: number;
+    }
+  ).c;
+  const items = db
+    .prepare(
+      `
+      SELECT kind, ref, discipline, occurred_on
+      FROM progress_events
+      WHERE user_id = ?
+      ORDER BY occurred_on DESC, created_at DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(userId, safeLimit, safeOffset) as unknown as UserEvent[];
+  return {
+    items,
+    total,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + items.length < total,
+  };
+}
+
+export function listLearnerEvidencePaginated(
+  userId: string,
+  limit = 50,
+  offset = 0,
+): PaginatedResult<LearnerEvidenceRecord> {
+  const db = getDatabase();
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const total = (
+    db.prepare("SELECT COUNT(*) as c FROM learner_evidence WHERE user_id = ?").get(userId) as {
+      c: number;
+    }
+  ).c;
+  const items = db
+    .prepare(
+      `
+      SELECT idempotency_key, skill_id, evidence_type, ref, score, weight, confidence,
+             verification_tier, rubric_version, rubric_scores_json, artifact_url,
+             artifact_notes, occurred_at
+      FROM learner_evidence
+      WHERE user_id = ?
+      ORDER BY occurred_at DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(userId, safeLimit, safeOffset) as unknown as LearnerEvidenceRecord[];
+  return {
+    items,
+    total,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + items.length < total,
+  };
+}
+
+export function verifyLearnerEvidence(
+  targetUserId: string,
+  idempotencyKey: string,
+  verificationTier: "rubric-evaluated" | "reviewer-verified",
+  reviewerId: string,
+  scoreOverride?: number,
+  reviewerNote?: string,
+): Result<{ updated: boolean; reviewedAt: string }> {
   const db = getDatabase();
   try {
     const now = new Date().toISOString();
+    const existing = db
+      .prepare(
+        "SELECT id, score, artifact_notes FROM learner_evidence WHERE user_id = ? AND idempotency_key = ?",
+      )
+      .get(targetUserId, idempotencyKey) as
+      { id: string; score: number; artifact_notes: string | null } | undefined;
+    if (!existing) {
+      return fail("Evidence record not found for target learner.");
+    }
+    const nextScore = typeof scoreOverride === "number" ? scoreOverride : existing.score;
+    const nextNotes = reviewerNote
+      ? [existing.artifact_notes, `[Reviewer verified ${now}]: ${reviewerNote}`]
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 8000)
+      : existing.artifact_notes;
+
     db.prepare(
       `
-      INSERT INTO learner_state_snapshots (user_id, state_json, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET
-        state_json = excluded.state_json,
-        updated_at = excluded.updated_at
+      UPDATE learner_evidence
+      SET verification_tier = ?,
+          score = ?,
+          artifact_notes = ?,
+          reviewer_id = ?,
+          reviewed_at = ?
+      WHERE user_id = ? AND idempotency_key = ?
     `,
-    ).run(userId, stateJson, now);
-    return ok(true);
+    ).run(verificationTier, nextScore, nextNotes, reviewerId, now, targetUserId, idempotencyKey);
+    return ok({ updated: true, reviewedAt: now });
+  } catch (e) {
+    return fail((e as Error).message || "Couldn't verify evidence.");
+  }
+}
+
+export function saveLearnerSnapshot(userId: string, stateJson: string): Result<true> {
+  const res = saveLearnerSnapshotWithVersion(userId, stateJson);
+  if (res.error) return fail(res.error);
+  return ok(true);
+}
+
+export function saveLearnerSnapshotWithVersion(
+  userId: string,
+  stateJson: string,
+  expectedVersion?: number,
+): Result<{ version: number; conflict: boolean; currentVersion: number }> {
+  const db = getDatabase();
+  try {
+    const now = new Date().toISOString();
+    const existing = db
+      .prepare("SELECT version FROM learner_state_snapshots WHERE user_id = ?")
+      .get(userId) as { version: number } | undefined;
+
+    if (!existing) {
+      if (expectedVersion !== undefined && expectedVersion > 0) {
+        return ok({ version: 0, conflict: true, currentVersion: 0 });
+      }
+      db.prepare(
+        "INSERT INTO learner_state_snapshots (user_id, state_json, version, updated_at) VALUES (?, ?, 1, ?)",
+      ).run(userId, stateJson, now);
+      return ok({ version: 1, conflict: false, currentVersion: 1 });
+    }
+
+    if (expectedVersion !== undefined && existing.version !== expectedVersion) {
+      return ok({
+        version: existing.version,
+        conflict: true,
+        currentVersion: existing.version,
+      });
+    }
+
+    const nextVersion = existing.version + 1;
+    const info = db
+      .prepare(
+        "UPDATE learner_state_snapshots SET state_json = ?, version = ?, updated_at = ? WHERE user_id = ? AND version = ?",
+      )
+      .run(stateJson, nextVersion, now, userId, existing.version);
+
+    if (info.changes === 0) {
+      const latest = db
+        .prepare("SELECT version FROM learner_state_snapshots WHERE user_id = ?")
+        .get(userId) as { version: number } | undefined;
+      return ok({
+        version: latest?.version ?? existing.version,
+        conflict: true,
+        currentVersion: latest?.version ?? existing.version,
+      });
+    }
+    return ok({ version: nextVersion, conflict: false, currentVersion: nextVersion });
   } catch (e) {
     return fail((e as Error).message || "Couldn't persist learner snapshot.");
   }
@@ -1261,12 +1593,169 @@ export function saveLearnerSnapshot(userId: string, stateJson: string): Result<t
 
 export function getLearnerSnapshot(
   userId: string,
-): { stateJson: string; updatedAt: string } | null {
+): { stateJson: string; updatedAt: string; version: number } | null {
   const db = getDatabase();
   const row = db
-    .prepare("SELECT state_json, updated_at FROM learner_state_snapshots WHERE user_id = ?")
-    .get(userId) as unknown as { state_json: string; updated_at: string } | undefined;
-  return row ? { stateJson: row.state_json, updatedAt: row.updated_at } : null;
+    .prepare(
+      "SELECT state_json, updated_at, version FROM learner_state_snapshots WHERE user_id = ?",
+    )
+    .get(userId) as unknown as
+    { state_json: string; updated_at: string; version: number } | undefined;
+  return row
+    ? { stateJson: row.state_json, updatedAt: row.updated_at, version: Number(row.version ?? 1) }
+    : null;
+}
+
+export type UserRoleName = "learner" | "reviewer" | "author" | "admin";
+
+export type UserRoleRecord = {
+  user_id: string;
+  role: UserRoleName;
+  granted_by: string | null;
+  granted_at: string;
+};
+
+export function getUserRole(userId: string): UserRoleName {
+  const db = getDatabase();
+  const row = db.prepare("SELECT role FROM user_roles WHERE user_id = ?").get(userId) as
+    { role: UserRoleName } | undefined;
+  return row?.role ?? "learner";
+}
+
+export function setUserRole(
+  userId: string,
+  role: UserRoleName,
+  grantedBy: string | null,
+): Result<UserRoleRecord> {
+  const db = getDatabase();
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `
+      INSERT INTO user_roles (user_id, role, granted_by, granted_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        role = excluded.role,
+        granted_by = excluded.granted_by,
+        granted_at = excluded.granted_at
+    `,
+    ).run(userId, role, grantedBy, now);
+    return ok({ user_id: userId, role, granted_by: grantedBy, granted_at: now });
+  } catch (e) {
+    return fail((e as Error).message || "Couldn't update user role.");
+  }
+}
+
+export function listUserRoles(): UserRoleRecord[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      "SELECT user_id, role, granted_by, granted_at FROM user_roles ORDER BY granted_at DESC LIMIT 500",
+    )
+    .all() as unknown as UserRoleRecord[];
+}
+
+/**
+ * One-time atomic local-dev admin bootstrap.
+ * Only succeeds if zero admin roles exist yet in `user_roles`.
+ */
+export function claimFirstLocalAdmin(userId: string): Result<{ claimed: boolean }> {
+  const db = getDatabase();
+  try {
+    db.exec("BEGIN IMMEDIATE;");
+    const existing = db
+      .prepare("SELECT COUNT(*) as c FROM user_roles WHERE role = 'admin'")
+      .get() as { c: number };
+    if (existing.c > 0) {
+      db.exec("COMMIT;");
+      return ok({ claimed: false });
+    }
+    const now = new Date().toISOString();
+    db.prepare(
+      `
+      INSERT INTO user_roles (user_id, role, granted_by, granted_at)
+      VALUES (?, 'admin', 'bootstrap', ?)
+      ON CONFLICT(user_id) DO UPDATE SET role = 'admin', granted_by = 'bootstrap', granted_at = excluded.granted_at
+    `,
+    ).run(userId, now);
+    db.exec("COMMIT;");
+    return ok({ claimed: true });
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK;");
+    } catch {
+      /* ignore */
+    }
+    return fail((e as Error).message || "Couldn't claim local admin role.");
+  }
+}
+
+export type AuditLogRecord = {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  outcome: "ok" | "denied" | "error";
+  request_id: string | null;
+  meta_json: string | null;
+  created_at: string;
+};
+
+export function writeAuditLog(entry: {
+  actorUserId?: string | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  outcome: "ok" | "denied" | "error";
+  requestId?: string | null;
+  meta?: Record<string, unknown>;
+}): void {
+  try {
+    const db = getDatabase();
+    db.prepare(
+      `
+      INSERT INTO audit_log (id, actor_user_id, action, resource_type, resource_id, outcome, request_id, meta_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      crypto.randomUUID(),
+      entry.actorUserId ?? null,
+      entry.action,
+      entry.resourceType,
+      entry.resourceId ?? null,
+      entry.outcome,
+      entry.requestId ?? null,
+      entry.meta ? JSON.stringify(entry.meta).slice(0, 4000) : null,
+      new Date().toISOString(),
+    );
+  } catch {
+    /* never crash business operation on audit log failure */
+  }
+}
+
+export function listAuditLogsPaginated(limit = 50, offset = 0): PaginatedResult<AuditLogRecord> {
+  const db = getDatabase();
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const total = (db.prepare("SELECT COUNT(*) as c FROM audit_log").get() as { c: number }).c;
+  const items = db
+    .prepare(
+      `
+      SELECT id, actor_user_id, action, resource_type, resource_id, outcome, request_id, meta_json, created_at
+      FROM audit_log
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(safeLimit, safeOffset) as unknown as AuditLogRecord[];
+  return {
+    items,
+    total,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + items.length < total,
+  };
 }
 
 export type SourceExtractionBreakdown = {
@@ -1464,8 +1953,18 @@ export const localDb = {
   saveProgress,
   recordLearnerEvidence,
   listLearnerEvidence,
+  listProgressEventsPaginated,
+  listLearnerEvidencePaginated,
+  verifyLearnerEvidence,
   saveLearnerSnapshot,
+  saveLearnerSnapshotWithVersion,
   getLearnerSnapshot,
+  getUserRole,
+  setUserRole,
+  listUserRoles,
+  claimFirstLocalAdmin,
+  writeAuditLog,
+  listAuditLogsPaginated,
   findLocalAuthUserByEmail,
   findLocalAuthUserById,
   createLocalAuthUser,

@@ -9,11 +9,13 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:sqlite": "node scripts/seed-sqlite.ts",
-    "validate:pack": "node scripts/validate-pack.ts",
+    "seed:sqlite": "node --experimental-strip-types scripts/seed-sqlite.ts",
+    "import:course": "node --experimental-strip-types scripts/import-course.ts",
+    "validate:pack": "node --experimental-strip-types scripts/validate-pack.ts",
     "generate:sources": "node scripts/generate_source_enrichment.js"
   },
   "overrides": {

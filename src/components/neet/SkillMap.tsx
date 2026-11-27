@@ -3,7 +3,9 @@ import Link from "@/components/neet/AppLink";
 import { DISCIPLINES, SKILLS, STAGES, lessonHref, skillById } from "@/lib/neet/content";
 import {
   COMPETENCY_MODEL_VERSION,
+  INCOSE_CROSSWALK_NOTICE,
   competencyById,
+  incoseCrosswalkFor,
   labsForCompetency,
   lessonsForCompetency,
 } from "@/lib/neet/competencies";
@@ -233,6 +235,33 @@ export default function SkillMap({ compact = false }: { compact?: boolean }) {
             </div>
 
             <div className="space-y-5">
+              {(() => {
+                const xwalk = incoseCrosswalkFor(selectedSkill.id);
+                if (!xwalk) return null;
+                return (
+                  <div className="rounded-2xl border border-line bg-bg p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-label text-xs uppercase tracking-widest text-accent">
+                        INCOSE SECF 2e Crosswalk
+                      </h4>
+                      <span className="rounded-full bg-surface-2 px-2.5 py-0.5 font-mono text-[10px] uppercase text-text">
+                        {xwalk.mappingType} mapping · {xwalk.incoseCompetencyId}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-medium text-text">
+                      {xwalk.incoseDomain} · {xwalk.incoseTitle}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted">{xwalk.rationale}</p>
+                    <p className="mt-2 font-mono text-[10px] text-muted">
+                      Indicators: {xwalk.indicatorRefs.join(" · ")} (Reviewed {xwalk.reviewedAt})
+                    </p>
+                    <p className="mt-2 border-t border-line/60 pt-2 text-[11px] text-muted">
+                      {INCOSE_CROSSWALK_NOTICE}
+                    </p>
+                  </div>
+                );
+              })()}
+
               <div>
                 <h4 className="font-label text-xs uppercase tracking-widest text-accent">
                   Authoritative Standards Anchors

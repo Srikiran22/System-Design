@@ -111,11 +111,16 @@ export function mulberry32(seed: number) {
   };
 }
 
+/** Maximum signed PostgreSQL INT4 value (2^31 - 1). */
+export const MAX_PG_INT4 = 2_147_483_647;
+
+/** Deterministic positive 31-bit FNV-1a seed guaranteed to fit PostgreSQL signed INT4 [1, 2147483647]. */
 export function seedFrom(text: string): number {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return h >>> 0;
+  const signed31 = h & MAX_PG_INT4;
+  return signed31 === 0 ? 1 : signed31;
 }

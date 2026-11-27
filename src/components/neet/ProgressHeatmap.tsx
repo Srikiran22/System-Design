@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { bucketByDay, heatmapGrid, streaks, type DisciplineCode } from "@/lib/neet/progress-math";
 
-const LEVEL_BG = ["bg-surface-2", "bg-accent/25", "bg-accent/50", "bg-accent/75", "bg-accent"];
+const LEVEL_BG = ["bg-surface-3", "bg-accent/25", "bg-accent/50", "bg-accent/75", "bg-accent"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DISC: { code: DisciplineCode; label: string }[] = [
   { code: "st", label: "Systems Thinking" },
@@ -45,15 +45,15 @@ export default function ProgressHeatmap({
       {!compact && (
         <div className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
           <span>
-            <strong className="text-text">{total}</strong>{" "}
+            <strong className="font-mono tabular-nums text-text">{total}</strong>{" "}
             <span className="text-muted">activities in the last year</span>
           </span>
           <span>
-            <strong className="text-text">{s.current}</strong>{" "}
+            <strong className="font-mono tabular-nums text-electric">{s.current}</strong>{" "}
             <span className="text-muted">day streak</span>
           </span>
           <span>
-            <strong className="text-text">{s.longest}</strong>{" "}
+            <strong className="font-mono tabular-nums text-text">{s.longest}</strong>{" "}
             <span className="text-muted">longest</span>
           </span>
         </div>
@@ -89,7 +89,7 @@ export default function ProgressHeatmap({
                         ? ""
                         : `${c.count} ${c.count === 1 ? "activity" : "activities"} on ${c.date}`
                     }
-                    className={`${size} rounded-[3px] ${c.future ? "opacity-0" : LEVEL_BG[c.level]}`}
+                    className={`${size} rounded-[2px] ${c.future ? "opacity-0" : LEVEL_BG[c.level]}`}
                   />
                 ))}
               </div>
@@ -98,18 +98,18 @@ export default function ProgressHeatmap({
         </div>
       </div>
       {!compact && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-          <div className="flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-xs text-muted">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {DISC.map((d) => (
-              <span key={d.code} className="rounded-full bg-surface-2 px-3 py-1">
-                {d.label} <strong className="text-text">+{perDisc[d.code]}</strong>
+              <span key={d.code} className="tabular-nums">
+                {d.label} <strong className="font-mono text-text">+{perDisc[d.code]}</strong>
               </span>
             ))}
           </div>
           <span className="flex items-center gap-1">
             Less{" "}
             {LEVEL_BG.map((b) => (
-              <span key={b} className={`h-3 w-3 rounded-[3px] ${b}`} />
+              <span key={b} className={`h-3 w-3 rounded-[2px] ${b}`} />
             ))}{" "}
             More
           </span>

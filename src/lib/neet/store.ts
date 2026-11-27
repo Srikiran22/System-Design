@@ -1,12 +1,18 @@
 import { useSyncExternalStore } from "react";
 import { PATHS, flatLessons, lessonKey } from "./content";
 import { CAPSTONE_PROJECT, SCENARIOS, evaluateRubric, getRubricForLab } from "./rubrics";
-import type { ArtifactAttempt, Evidence, Lab } from "./types";
+import type { ArtifactAttempt, DecisionRecord, Evidence, Lab } from "./types";
 
 export interface ScenarioAttempt {
   optionId: string;
   score: number;
   invalidationNote: string;
+  at: string;
+}
+
+export interface CapstoneChangeImpactRecord {
+  response: string;
+  affectedStages: string[];
   at: string;
 }
 
@@ -21,6 +27,8 @@ export interface State {
   explains: Record<string, { text: string; rating: number; at?: string; revisions?: number }>;
   scenarios: Record<string, ScenarioAttempt>;
   capstone: Record<string, ArtifactAttempt[]>;
+  capstoneChangeImpact?: CapstoneChangeImpactRecord;
+  targetRoleId?: string;
 }
 
 const LEGACY_KEY = "neet.progress.v1";
@@ -62,6 +70,12 @@ function normalizeState(raw: unknown): State {
     explains: r.explains && typeof r.explains === "object" ? r.explains : {},
     scenarios: r.scenarios && typeof r.scenarios === "object" ? r.scenarios : {},
     capstone: r.capstone && typeof r.capstone === "object" ? r.capstone : {},
+    ...(r.capstoneChangeImpact && typeof r.capstoneChangeImpact === "object"
+      ? { capstoneChangeImpact: r.capstoneChangeImpact }
+      : {}),
+    ...(typeof r.targetRoleId === "string" && r.targetRoleId
+      ? { targetRoleId: r.targetRoleId }
+      : {}),
   };
 }
 
@@ -170,6 +184,15 @@ export function mergeStates(local: State, incoming: State): State {
     return out;
   };
 
+  const latestChangeImpact =
+    local.capstoneChangeImpact && incoming.capstoneChangeImpact
+      ? local.capstoneChangeImpact.at >= incoming.capstoneChangeImpact.at
+        ? local.capstoneChangeImpact
+        : incoming.capstoneChangeImpact
+      : (local.capstoneChangeImpact ?? incoming.capstoneChangeImpact);
+
+  const mergedRoleId = local.targetRoleId ?? incoming.targetRoleId;
+
   return {
     completed,
     completedAt,
@@ -181,6 +204,8 @@ export function mergeStates(local: State, incoming: State): State {
     explains: { ...incoming.explains, ...local.explains },
     scenarios: { ...incoming.scenarios, ...local.scenarios },
     capstone: mergeAttempts(incoming.capstone, local.capstone),
+    ...(latestChangeImpact ? { capstoneChangeImpact: latestChangeImpact } : {}),
+    ...(mergedRoleId ? { targetRoleId: mergedRoleId } : {}),
   };
 }
 
@@ -340,6 +365,8 @@ export const actions = {
       confidence,
       ref: id,
       verificationTier: "automated-check",
+      evaluatorRole: "automated",
+      reviewState: "accepted",
     };
     write({
       ...s,
@@ -362,6 +389,8 @@ export const actions = {
       at: now,
       ref: `explain:${lessonKeyStr}`,
       verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
       artifactNotes: text.slice(0, 4000),
     };
     write({
@@ -389,6 +418,8 @@ export const actions = {
       at: now,
       ref: lab.id,
       verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
       artifactNotes: note.slice(0, 6000),
     };
     write({
@@ -398,12 +429,13 @@ export const actions = {
     });
     emitProgress({ kind: "lab", ref: lab.id, skillId: lab.skillId, occurredAt: now, evidence: ev });
   },
-  /** Rubric-evaluated lab submission with revision history and instant criterion feedback. */
+  /** Self-scored rubric lab submission with immutable revision history and criterion feedback. */
   submitLabRubric(
     lab: Lab,
     params: {
       note: string;
       twistResponse?: string;
+      feedbackResponse?: string;
       artifactUrl?: string;
       criterionScores: Record<string, number>;
     },
@@ -421,6 +453,9 @@ export const actions = {
       params.twistResponse?.trim()
         ? `\n\n[Constraint twist response]\n${params.twistResponse.trim()}`
         : "",
+      params.feedbackResponse?.trim()
+        ? `\n\n[Revision response to prior feedback]\n${params.feedbackResponse.trim()}`
+        : "",
     ]
       .join("")
       .trim();
@@ -431,12 +466,19 @@ export const actions = {
       note: fullNotes,
       ...(safeUrl ? { artifactUrl: safeUrl } : {}),
       ...(params.twistResponse?.trim() ? { twistResponse: params.twistResponse.trim() } : {}),
+      ...(params.feedbackResponse?.trim()
+        ? { feedbackResponse: params.feedbackResponse.trim() }
+        : {}),
+      rubricId: rubric.id,
       rubricVersion: rubric.version,
       rubricScores: params.criterionScores,
       weightedScore: evalResult.weightedScore,
       passedThreshold: evalResult.passedThreshold,
       feedbackSummary: evalResult.feedbackSummary,
-      verificationTier: "rubric-evaluated",
+      // Honest assessment contract: learner-scored rubrics are always self-assessed, never independently verified
+      verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
     };
 
     const weight = lab.evidenceType === "artifact" ? 3 : lab.evidenceType === "lab" ? 2.5 : 2;
@@ -449,7 +491,10 @@ export const actions = {
       weight,
       at: now,
       ref: lab.id,
-      verificationTier: "rubric-evaluated",
+      verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
+      rubricId: rubric.id,
       rubricVersion: rubric.version,
       rubricScores: params.criterionScores,
       ...(safeUrl ? { artifactUrl: safeUrl } : {}),
@@ -479,7 +524,7 @@ export const actions = {
     emitProgress({ kind: "lab", ref: lab.id, skillId: lab.skillId, occurredAt: now, evidence: ev });
     return attempt;
   },
-  /** Record a worked engineering trade-off scenario evaluation. */
+  /** Record a deterministic worked engineering trade-off scenario evaluation. */
   answerScenario(scenarioId: string, optionId: string, invalidationNote: string) {
     const scenario = SCENARIOS.find((sc) => sc.id === scenarioId);
     if (!scenario) return;
@@ -489,7 +534,6 @@ export const actions = {
     const s = read();
     const now = new Date().toISOString();
     const hasJustification = invalidationNote.trim().length >= 25;
-    // Credit full option score when learner also writes an invalidation condition; otherwise cap slightly
     const finalScore = hasJustification
       ? option.score
       : Math.round(Math.max(0, option.score - 0.1) * 100) / 100;
@@ -504,7 +548,9 @@ export const actions = {
       weight: 2.25,
       at: now,
       ref,
-      verificationTier: "rubric-evaluated",
+      verificationTier: "automated-check",
+      evaluatorRole: "automated",
+      reviewState: "accepted",
       artifactNotes:
         `Selected option ${optionId}: ${option.label}\nInvalidation condition: ${invalidationNote.trim()}`.slice(
           0,
@@ -533,12 +579,15 @@ export const actions = {
       evidence: ev,
     });
   },
-  /** Submit or revise a traceable Capstone milestone artifact. */
+  /** Submit or revise a traceable Capstone milestone artifact with upstream links and Decision Record. */
   submitCapstoneMilestone(
     milestoneId: string,
     params: {
       note: string;
       artifactUrl?: string;
+      feedbackResponse?: string;
+      linkedPriorArtifactIds?: string[];
+      decisionRecord?: DecisionRecord;
       criterionScores: Record<string, number>;
     },
   ): ArtifactAttempt | null {
@@ -553,17 +602,33 @@ export const actions = {
     const attemptNumber = prevAttempts.length + 1;
 
     const primarySkillId = milestone.skillIds[0] ?? "sd-requirements";
+    const linked = (params.linkedPriorArtifactIds ?? []).filter((id) => Boolean(id));
+    const hasDecision =
+      params.decisionRecord &&
+      (params.decisionRecord.selectedDecision.trim() ||
+        params.decisionRecord.rejectedAlternatives.trim() ||
+        params.decisionRecord.assumptions.trim() ||
+        params.decisionRecord.residualRisks.trim());
+
     const attempt: ArtifactAttempt = {
       attemptNumber,
       at: now,
       note: params.note.trim(),
       ...(safeUrl ? { artifactUrl: safeUrl } : {}),
+      ...(params.feedbackResponse?.trim()
+        ? { feedbackResponse: params.feedbackResponse.trim() }
+        : {}),
+      ...(linked.length > 0 ? { linkedPriorArtifactIds: linked } : {}),
+      ...(hasDecision && params.decisionRecord ? { decisionRecord: params.decisionRecord } : {}),
+      rubricId: milestone.rubric.id,
       rubricVersion: milestone.rubric.version,
       rubricScores: params.criterionScores,
       weightedScore: evalResult.weightedScore,
       passedThreshold: evalResult.passedThreshold,
       feedbackSummary: evalResult.feedbackSummary,
-      verificationTier: "rubric-evaluated",
+      verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
     };
 
     const ref = `capstone:${milestoneId}`;
@@ -576,7 +641,10 @@ export const actions = {
       weight: 3,
       at: now,
       ref,
-      verificationTier: "rubric-evaluated",
+      verificationTier: "self-assessed",
+      evaluatorRole: "self",
+      reviewState: "submitted",
+      rubricId: milestone.rubric.id,
       rubricVersion: milestone.rubric.version,
       rubricScores: params.criterionScores,
       ...(safeUrl ? { artifactUrl: safeUrl } : {}),
@@ -600,6 +668,35 @@ export const actions = {
     });
     return attempt;
   },
+  submitCapstoneChangeImpact(response: string, affectedStages: string[]) {
+    const s = read();
+    const now = new Date().toISOString();
+    const record: CapstoneChangeImpactRecord = {
+      response: response.trim().slice(0, 6000),
+      affectedStages: Array.from(new Set(affectedStages)),
+      at: now,
+    };
+    write({
+      ...s,
+      capstoneChangeImpact: record,
+    });
+    emitProgress({
+      kind: "lab",
+      ref: `capstone:${CAPSTONE_PROJECT.changeImpactChallenge.id}`,
+      skillId: "sd-trade-studies",
+      occurredAt: now,
+    });
+  },
+  setTargetRole(roleId: string | undefined) {
+    const s = read();
+    const next: State = { ...s };
+    if (roleId) {
+      next.targetRoleId = roleId;
+    } else {
+      delete next.targetRoleId;
+    }
+    write(next);
+  },
   loadDemo() {
     const day = 86_400_000;
     const now = Date.now();
@@ -620,6 +717,8 @@ export const actions = {
       confidence,
       ref: `demo-q-${skillId}-${n}`,
       verificationTier: "automated-check",
+      evaluatorRole: "automated",
+      reviewState: "accepted",
     });
     const evidence: Evidence[] = [
       q("st-stocks", 20, 1, 0.66, 1),
@@ -638,7 +737,10 @@ export const actions = {
         weight: 2.5,
         at: ago(4),
         ref: "lab-loop-map",
-        verificationTier: "rubric-evaluated",
+        verificationTier: "self-assessed",
+        evaluatorRole: "self",
+        reviewState: "submitted",
+        rubricId: "rubric-loop-map-v2",
       },
       {
         idempotencyKey: "demo-explain-1",
@@ -649,6 +751,7 @@ export const actions = {
         at: ago(4),
         ref: "demo-explain-1",
         verificationTier: "self-assessed",
+        evaluatorRole: "self",
       },
       q("st-leverage", 3, 0, 1, 1),
       q("st-leverage", 2, 1, 0.33, 2),
@@ -663,7 +766,10 @@ export const actions = {
         weight: 2,
         at: ago(27),
         ref: "lab-estimate",
-        verificationTier: "rubric-evaluated",
+        verificationTier: "self-assessed",
+        evaluatorRole: "self",
+        reviewState: "submitted",
+        rubricId: "rubric-estimate-v2",
       },
       q("sd-data", 24, 1, 0.66, 1),
       q("sd-data", 23, 1, 0.33, 2),
@@ -677,7 +783,10 @@ export const actions = {
         weight: 2.5,
         at: ago(7),
         ref: "lab-reading",
-        verificationTier: "rubric-evaluated",
+        verificationTier: "self-assessed",
+        evaluatorRole: "self",
+        reviewState: "submitted",
+        rubricId: "rubric-reading-v2",
       },
       {
         idempotencyKey: "demo-artifact-1",
@@ -687,7 +796,9 @@ export const actions = {
         weight: 3,
         at: ago(6),
         ref: "demo-artifact-1",
-        verificationTier: "rubric-evaluated",
+        verificationTier: "self-assessed",
+        evaluatorRole: "self",
+        reviewState: "submitted",
       },
       {
         idempotencyKey: "demo-review-1",
@@ -698,6 +809,7 @@ export const actions = {
         at: ago(1),
         ref: "demo-review-1",
         verificationTier: "automated-check",
+        evaluatorRole: "automated",
       },
     ];
     const completed = flatLessons(PATHS[0]!)

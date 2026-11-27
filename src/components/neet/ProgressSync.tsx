@@ -15,7 +15,8 @@ import { disciplineOf, isoDay } from "@/lib/neet/progress-math";
 import { LABS } from "@/lib/neet/content";
 import type { Evidence } from "@/lib/neet/types";
 import {
-  acknowledgeOutboxBatch,
+  MAX_SYNC_RETRIES,
+  acknowledgeOutboxByKeys,
   enqueueOutboxItems,
   isUserBackfilled,
   markUserBackfilled,
@@ -59,11 +60,11 @@ function toEvidenceRow(ev: Evidence): QueuedEvidenceRow {
 }
 
 /**
- * Account-isolated, durable progress and evidence synchronizer.
+ * Account-isolated, truthful progress and evidence synchronizer.
  * - Namespaces local progress and outbox strictly by userId (never mixes accounts)
- * - Hydrates cross-device learner snapshot on sign-in
- * - Queues offline work durably in localStorage and retries with capped exponential backoff
- * - Marks backfill complete ONLY after server acknowledgement
+ * - Hydrates cross-device learner snapshot with monotonic serverVersion protection
+ * - Acknowledges ONLY server-confirmed keys; retains rejected items honestly in outbox
+ * - Uses jittered bounded exponential backoff with MAX_SYNC_RETRIES ceiling
  */
 export default function ProgressSync() {
   const { user, ready } = useSession();
@@ -73,12 +74,14 @@ export default function ProgressSync() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
   const flushing = useRef(false);
+  const lastServerVersion = useRef(0);
 
   useEffect(() => {
     if (!ready) return;
 
     const userId = user?.id ?? null;
     setActiveUser(userId);
+    lastServerVersion.current = 0;
 
     if (!userId) {
       if (timer.current) clearTimeout(timer.current);
@@ -92,7 +95,14 @@ export default function ProgressSync() {
     let needsBackfillMark = false;
 
     const updatePendingCounts = (
-      stateOverride?: "idle" | "syncing" | "synced" | "offline" | "error",
+      stateOverride?:
+        | "idle"
+        | "pending"
+        | "syncing"
+        | "synced"
+        | "partially_synced"
+        | "offline"
+        | "needs_attention",
     ) => {
       const box = readOutbox(userId);
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
@@ -100,6 +110,7 @@ export default function ProgressSync() {
         ...(stateOverride ? { state: offline ? "offline" : stateOverride } : {}),
         pendingEvents: box.events.length,
         pendingEvidence: box.evidence.length,
+        snapshotPending: box.includeSnapshot,
       });
     };
 
@@ -115,7 +126,7 @@ export default function ProgressSync() {
       const box = readOutbox(userId);
       const eventsBatch = box.events.slice(0, 500);
       const evidenceBatch = box.evidence.slice(0, 500);
-      if (eventsBatch.length === 0 && evidenceBatch.length === 0) {
+      if (eventsBatch.length === 0 && evidenceBatch.length === 0 && !box.includeSnapshot) {
         if (needsBackfillMark) {
           markUserBackfilled(userId);
           needsBackfillMark = false;
@@ -124,33 +135,20 @@ export default function ProgressSync() {
           state: "synced",
           pendingEvents: 0,
           pendingEvidence: 0,
+          snapshotPending: false,
           lastError: null,
+          lastNotice: null,
           retryCount: 0,
         });
         return;
       }
-
-      // recordEvents requires >=1 event; if we only have evidence, synthesize a matching event
-      const payloadEvents: QueuedEventRow[] =
-        eventsBatch.length > 0
-          ? eventsBatch
-          : evidenceBatch.slice(0, 1).map((ev) => ({
-              kind:
-                ev.evidence_type === "quiz"
-                  ? "quiz"
-                  : ev.evidence_type === "explain"
-                    ? "explain"
-                    : "lab",
-              ref: ev.ref,
-              discipline: disciplineOf(ev.skill_id),
-              occurred_on: isoDay(new Date(ev.occurred_at)),
-            }));
 
       flushing.current = true;
       setSyncStatus({
         state: "syncing",
         pendingEvents: box.events.length,
         pendingEvidence: box.evidence.length,
+        snapshotPending: box.includeSnapshot,
       });
 
       try {
@@ -159,54 +157,97 @@ export default function ProgressSync() {
           : undefined;
         const r = await send({
           data: {
-            events: payloadEvents,
+            events: eventsBatch,
             ...(evidenceBatch.length > 0 ? { evidence: evidenceBatch } : {}),
             ...(snapshotJson ? { snapshotJson } : {}),
           },
         });
         if (cancelled) return;
-        if (r.error) throw new Error(r.error);
+        if (r.error || !r.data) throw new Error(r.error ?? "Sync failed.");
 
-        const remaining = acknowledgeOutboxBatch(userId, {
-          events: eventsBatch,
-          evidence: evidenceBatch,
-          snapshotAcked: Boolean(snapshotJson),
+        const ack = r.data;
+        if (ack.serverVersion > lastServerVersion.current) {
+          lastServerVersion.current = ack.serverVersion;
+        }
+
+        // CRITICAL: remove ONLY keys explicitly confirmed by the server
+        const remaining = acknowledgeOutboxByKeys(userId, {
+          acceptedEventKeys: ack.acceptedEventKeys,
+          acceptedEvidenceKeys: ack.acceptedEvidenceKeys,
+          snapshotAcked: ack.snapshotSaved,
         });
 
+        const hasRemaining =
+          remaining.events.length > 0 || remaining.evidence.length > 0 || remaining.includeSnapshot;
+
+        if (ack.partialFailure) {
+          retryCount.current += 1;
+          const exhausted = retryCount.current >= MAX_SYNC_RETRIES;
+          setSyncStatus({
+            state: exhausted ? "needs_attention" : "partially_synced",
+            pendingEvents: remaining.events.length,
+            pendingEvidence: remaining.evidence.length,
+            snapshotPending: remaining.includeSnapshot,
+            ...(ack.syncedEvents > 0 || ack.syncedEvidence > 0
+              ? { lastSyncedAt: new Date().toISOString() }
+              : {}),
+            lastServerVersion: lastServerVersion.current,
+            lastError: null,
+            lastNotice:
+              ack.notice ??
+              "Some records are still pending cloud persistence and remain safely stored on this device.",
+            retryCount: retryCount.current,
+          });
+          if (ack.syncedEvents > 0 || ack.syncedEvidence > 0) {
+            qc.invalidateQueries({ queryKey: ["me"] });
+          }
+          // Avoid tight retry loops when cloud tables are unprovisioned; respect retry ceiling
+          if (!exhausted && hasRemaining) {
+            timer.current = setTimeout(flush, nextBackoffMs(retryCount.current));
+          }
+          return;
+        }
+
         retryCount.current = 0;
-        if (needsBackfillMark && remaining.events.length === 0 && remaining.evidence.length === 0) {
+        if (needsBackfillMark && !hasRemaining) {
           markUserBackfilled(userId);
           needsBackfillMark = false;
         }
 
         setSyncStatus({
-          state:
-            remaining.events.length > 0 || remaining.evidence.length > 0 ? "syncing" : "synced",
+          state: hasRemaining ? "pending" : "synced",
           pendingEvents: remaining.events.length,
           pendingEvidence: remaining.evidence.length,
+          snapshotPending: remaining.includeSnapshot,
           lastSyncedAt: new Date().toISOString(),
+          lastServerVersion: lastServerVersion.current,
           lastError: null,
+          lastNotice: null,
           retryCount: 0,
         });
 
         qc.invalidateQueries({ queryKey: ["me"] });
 
-        if (remaining.events.length > 0 || remaining.evidence.length > 0) {
+        if (hasRemaining) {
           timer.current = setTimeout(flush, 500);
         }
       } catch (err) {
         if (cancelled) return;
         retryCount.current += 1;
-        const delay = nextBackoffMs(retryCount.current);
+        const exhausted = retryCount.current >= MAX_SYNC_RETRIES;
         const boxNow = readOutbox(userId);
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus({
-          state: typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error",
+          state: offline ? "offline" : exhausted ? "needs_attention" : "pending",
           pendingEvents: boxNow.events.length,
           pendingEvidence: boxNow.evidence.length,
-          lastError: err instanceof Error ? err.message : "Sync failed; retrying automatically.",
+          snapshotPending: boxNow.includeSnapshot,
+          lastError: err instanceof Error ? err.message : "Sync failed; queued locally.",
           retryCount: retryCount.current,
         });
-        timer.current = setTimeout(flush, delay);
+        if (!offline && !exhausted) {
+          timer.current = setTimeout(flush, nextBackoffMs(retryCount.current));
+        }
       } finally {
         flushing.current = false;
       }
@@ -224,7 +265,12 @@ export default function ProgressSync() {
       try {
         const snapRes = await fetchSnapshot();
         if (cancelled) return;
-        if (!snapRes.error && snapRes.data?.stateJson) {
+        if (
+          !snapRes.error &&
+          snapRes.data?.stateJson &&
+          snapRes.data.serverVersion >= lastServerVersion.current
+        ) {
+          lastServerVersion.current = snapRes.data.serverVersion;
           hydrateFromServerSnapshot(snapRes.data.stateJson);
         }
       } catch {
@@ -290,15 +336,17 @@ export default function ProgressSync() {
       }
 
       const pending = readOutbox(userId);
-      if (pending.events.length > 0 || pending.evidence.length > 0) {
-        updatePendingCounts("syncing");
+      if (pending.events.length > 0 || pending.evidence.length > 0 || pending.includeSnapshot) {
+        updatePendingCounts("pending");
         schedule(300);
       } else {
         setSyncStatus({
           state: typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced",
           pendingEvents: 0,
           pendingEvidence: 0,
+          snapshotPending: false,
           lastError: null,
+          lastNotice: null,
           retryCount: 0,
         });
       }
@@ -306,18 +354,19 @@ export default function ProgressSync() {
 
     const onSig = (e: Event) => {
       const sig = (e as CustomEvent<ProgressSignal>).detail;
+      retryCount.current = 0;
       enqueueOutboxItems(userId, {
         events: [toEventRow(sig)],
         ...(sig.evidence ? { evidence: [toEvidenceRow(sig.evidence)] } : {}),
         includeSnapshot: true,
       });
-      updatePendingCounts("syncing");
+      updatePendingCounts("pending");
       schedule(700);
     };
 
     const onOnline = () => {
       retryCount.current = 0;
-      updatePendingCounts("syncing");
+      updatePendingCounts("pending");
       schedule(300);
     };
 
@@ -325,15 +374,25 @@ export default function ProgressSync() {
       updatePendingCounts("offline");
     };
 
+    const onManualRetry = () => {
+      retryCount.current = 0;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      updatePendingCounts("syncing");
+      schedule(50);
+    };
+
     window.addEventListener("neet:progress", onSig);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    window.addEventListener("neet:sync-retry", onManualRetry);
 
     return () => {
       cancelled = true;
       window.removeEventListener("neet:progress", onSig);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("neet:sync-retry", onManualRetry);
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     };

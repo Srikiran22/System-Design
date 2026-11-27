@@ -1,86 +1,53 @@
 import Link from "@/components/neet/AppLink";
-import Motto from "./Motto";
 
 export default function Footer() {
   return (
-    <footer className="mt-24 border-t border-line bg-surface">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-12 md:grid-cols-[1.5fr_1fr_1fr]">
-        <div>
-          <p className="font-label text-xl font-bold tracking-[0.25em] text-accent">NEET</p>
-          <p className="mt-1 font-display italic text-muted">
-            Not in Education, Employment, or Training.
-          </p>
-          <p className="mt-4 max-w-sm text-muted">
-            We ain&apos;t an academy. We&apos;re a group that learns by building, and shows its work
-            instead of collecting badges.
-          </p>
-          <Motto className="mt-6 text-sm" />
-        </div>
-        <div>
-          <p className="font-label text-sm uppercase tracking-widest text-muted">Learn</p>
-          <ul className="mt-3 space-y-2">
-            <li>
-              <Link className="hover:text-accent" href="/library">
-                Knowledge library
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/paths">
-                Paths
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/exercises">
-                Exercises
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/careers">
-                Careers
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/sources">
-                Sources
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/coverage">
-                Research coverage
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/labs">
-                Practice labs
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/method">
-                The method
-              </Link>
-            </li>
-          </ul>
-        </div>
-        <div>
-          <p className="font-label text-sm uppercase tracking-widest text-muted">You</p>
-          <ul className="mt-3 space-y-2">
-            <li>
-              <Link className="hover:text-accent" href="/me">
-                My progress
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/me/calibration">
-                Calibration
-              </Link>
-            </li>
-            <li>
-              <Link className="hover:text-accent" href="/health">
-                System health
-              </Link>
-            </li>
-          </ul>
-          <p className="mt-6 text-sm text-muted">Progress is saved in this browser only.</p>
+    <footer className="mt-20 border-t border-line bg-surface-1 py-12">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded bg-accent font-display text-xs font-bold text-bg">
+              S
+            </span>
+            <div>
+              <span className="font-display text-sm font-bold tracking-tight text-text">
+                From Scratch
+              </span>
+              <p className="text-xs text-muted">
+                Built for engineers who want to ship real systems. Not just tutorials.
+              </p>
+            </div>
+          </div>
+
+          <nav
+            aria-label="Footer navigation"
+            className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted"
+          >
+            <Link href="/paths" className="transition-colors hover:text-accent">
+              Paths
+            </Link>
+            <Link href="/library" className="transition-colors hover:text-accent">
+              Library
+            </Link>
+            <Link href="/sources" className="transition-colors hover:text-accent">
+              Sources
+            </Link>
+            <Link href="/coverage" className="transition-colors hover:text-accent">
+              Coverage
+            </Link>
+            <Link href="/careers" className="transition-colors hover:text-accent">
+              Careers
+            </Link>
+            <Link href="/method" className="transition-colors hover:text-accent">
+              Method
+            </Link>
+            <Link href="/me/calibration" className="transition-colors hover:text-accent">
+              Calibration
+            </Link>
+            <Link href="/health" className="transition-colors hover:text-accent">
+              System Health
+            </Link>
+          </nav>
         </div>
       </div>
     </footer>

@@ -23,13 +23,13 @@ import { setActiveUser } from "@/lib/neet/store";
 function NotFoundComponent() {
   return (
     <div className="mx-auto max-w-2xl px-5 py-32 text-center">
-      <p className="font-label text-sm uppercase tracking-widest text-accent">404</p>
-      <h1 className="mt-3 font-display text-5xl">Off the map.</h1>
+      <p className="section-label text-accent">404 · Not Found</p>
+      <h1 className="section-title mt-2 text-5xl text-text">Off the map.</h1>
       <p className="mt-4 text-muted">
-        That page does not exist. Try the paths, or press ⌘K to search.
+        That page does not exist. Explore the curriculum paths, or press ⌘K to search.
       </p>
-      <Link to="/paths" className="mt-8 inline-block btn-ink ">
-        Browse paths
+      <Link to="/paths" className="btn-ink mt-8 inline-flex">
+        Browse curriculum
       </Link>
     </div>
   );
@@ -43,16 +43,18 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+      <div className="max-w-md rounded-lg border border-line bg-surface-2 p-8 text-center">
+        <p className="section-label text-magenta">Runtime Error</p>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-text">
+          This page didn&apos;t load
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-muted">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button
+            type="button"
             onClick={() => {
               router.invalidate();
               reset();
@@ -61,7 +63,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           >
             Try again
           </button>
-          <a href="/" className="rounded-full bg-surface-2 px-4 py-2 text-sm text-text">
+          <a href="/" className="btn-soft text-sm">
             Go home
           </a>
         </div>
@@ -75,15 +77,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "NEET: we ain't an academy, we're a group" },
+      { title: "From Scratch — System Design Learning Hub" },
       {
         name: "description",
-        content: "A group learning systems thinking, system design and engineering by building.",
+        content:
+          "A hands-on, self-directed curriculum for mastering systems thinking, system design, and production engineering.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Doto:wght@400;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -99,11 +108,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body className="flex min-h-screen flex-col">
+      <body className="flex min-h-screen flex-col bg-bg text-text antialiased">
         {children}
         <Scripts />
       </body>
@@ -134,7 +143,7 @@ function RootComponent() {
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded focus:bg-accent focus:px-3 focus:py-2 focus:text-bg"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:font-semibold focus:text-bg"
       >
         Skip to content
       </a>
@@ -145,7 +154,7 @@ function RootComponent() {
       <Footer />
       <CommandPalette />
       <ProgressSync />
-      <Toaster position="bottom-center" />
+      <Toaster position="bottom-center" theme="dark" />
     </QueryClientProvider>
   );
 }

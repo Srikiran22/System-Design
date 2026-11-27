@@ -126,14 +126,14 @@ export default function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-start justify-center bg-black/60 px-4 pt-[15vh]"
+      className="fixed inset-0 z-[90] flex items-start justify-center bg-black/75 px-4 pt-[15vh] backdrop-blur-xs"
       onMouseDown={() => setOpen(false)}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search"
-        className="w-full max-w-xl overflow-hidden rounded-3xl bg-surface shadow-2xl"
+        className="w-full max-w-xl overflow-hidden rounded-lg border border-line bg-surface-2 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input
@@ -154,11 +154,11 @@ export default function CommandPalette() {
           }}
           placeholder="Search lessons, paths, labs…"
           aria-label="Search"
-          className="w-full border-b border-line bg-transparent px-5 py-4 text-lg text-text placeholder:text-muted focus:outline-none"
+          className="w-full border-b border-line bg-transparent px-5 py-4 text-base text-text placeholder:text-muted focus:outline-none"
         />
         <ul role="listbox" className="max-h-80 overflow-auto p-2">
           {results.length === 0 && (
-            <li className="px-3 py-6 text-center text-muted">
+            <li className="px-3 py-6 text-center text-sm text-muted">
               Nothing found for &ldquo;{q}&rdquo;.
             </li>
           )}
@@ -169,14 +169,16 @@ export default function CommandPalette() {
               aria-selected={i === active}
               onMouseEnter={() => setActive(i)}
               onClick={() => go(r)}
-              className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2.5 ${i === active ? "bg-surface-2 text-accent" : "text-text"}`}
+              className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
+                i === active ? "bg-surface-3 text-accent" : "text-text"
+              }`}
             >
-              <span>{r.label}</span>
-              <span className="truncate font-label text-xs text-muted">{r.hint}</span>
+              <span className="truncate font-medium">{r.label}</span>
+              <span className="shrink-0 font-mono text-xs text-muted">{r.hint}</span>
             </li>
           ))}
         </ul>
-        <p className="border-t border-line px-4 py-2 font-label text-xs text-muted">
+        <p className="border-t border-line bg-surface-1 px-4 py-2 font-mono text-xs text-muted">
           ↑↓ navigate · ↵ open · esc close
         </p>
       </div>

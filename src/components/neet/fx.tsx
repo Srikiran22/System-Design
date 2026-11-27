@@ -1,6 +1,6 @@
 import { useRef, type ReactNode, type MouseEvent } from "react";
 
-/** Word-by-word blur-in headline (inspired by reactbits BlurText). */
+/** Word-by-word blur-in headline. */
 export function BlurText({
   text,
   className = "",
@@ -26,7 +26,7 @@ export function BlurText({
   );
 }
 
-/** Card with a soft light that follows the cursor (inspired by reactbits SpotlightCard). */
+/** Card with a subtle sage-mint hover spotlight matching VisageGlow surfaces. */
 export function SpotlightCard({
   children,
   className = "",
@@ -46,14 +46,14 @@ export function SpotlightCard({
     <div
       ref={ref}
       onMouseMove={onMove}
-      className={`group relative overflow-hidden rounded-3xl bg-surface transition duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] ${className}`}
+      className={`group relative overflow-hidden rounded-lg border border-line bg-surface-2 transition duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-[var(--shadow-lift)] ${className}`}
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
         style={{
           background:
-            "radial-gradient(420px circle at var(--x) var(--y), color-mix(in oklab, var(--accent) 12%, transparent), transparent 60%)",
+            "radial-gradient(360px circle at var(--x) var(--y), rgba(184, 230, 183, 0.08), transparent 60%)",
         }}
       />
       <div className="relative h-full">{children}</div>

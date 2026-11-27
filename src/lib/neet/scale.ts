@@ -1,5 +1,5 @@
 import { LABS, PATHS, SKILLS, allLessons, lessonHref, lessonKey } from "./content";
-import { COMPETENCIES, inferCompetenciesFromText } from "./competencies";
+import { COMPETENCIES, inferCompetenciesFromText, roleProfileById } from "./competencies";
 import type {
   Discipline,
   Evidence,
@@ -9,7 +9,7 @@ import type {
   VerificationTier,
 } from "./types";
 
-export const SCALE_MODEL_VERSION = "2.0.0";
+export const SCALE_MODEL_VERSION = "2.1.0";
 export const HALF_LIFE_DAYS = 45;
 export const TARGET_WEIGHT = 6;
 const DAY = 86_400_000;
@@ -23,17 +23,32 @@ const TIER_RANK: Record<VerificationTier, number> = {
   "reviewer-verified": 4,
 };
 
+/**
+ * Honest verification tier resolution:
+ * Self-scored rubrics (evaluatorRole === "self") NEVER claim rubric-evaluated or reviewer-verified.
+ */
+export function resolveEvidenceTier(e: Evidence): VerificationTier {
+  if (e.evaluatorRole === "self") return "self-assessed";
+  if (e.verificationTier === "reviewer-verified" && e.reviewerId) return "reviewer-verified";
+  if (
+    e.verificationTier === "rubric-evaluated" &&
+    (e.evaluatorRole === "peer" || e.evaluatorRole === "reviewer")
+  ) {
+    return "rubric-evaluated";
+  }
+  if (e.verificationTier === "automated-check" || e.evaluatorRole === "automated") {
+    return "automated-check";
+  }
+  if (e.type === "quiz") return "automated-check";
+  if (e.type === "review" && e.reviewerId) return "reviewer-verified";
+  return "self-assessed";
+}
+
 function highestTier(evidence: Evidence[]): VerificationTier | "none" {
   if (evidence.length === 0) return "none";
   let best: VerificationTier = "self-assessed";
   for (const e of evidence) {
-    const tier: VerificationTier =
-      e.verificationTier ??
-      (e.type === "quiz"
-        ? "automated-check"
-        : e.type === "review"
-          ? "reviewer-verified"
-          : "self-assessed");
+    const tier = resolveEvidenceTier(e);
     if (TIER_RANK[tier] > TIER_RANK[best]) best = tier;
   }
   return best;
@@ -48,7 +63,7 @@ function computeFreshness(lastEvidenceAt: string | undefined, now: number): Fres
 }
 
 /**
- * Proceed Scale v2 (explainable & versioned):
+ * Proceed Scale v2.1 (explainable & versioned):
  *   quality  = sum(weight * score * decay(age)) / sum(weight)
  *   coverage = min(1, sum(weight) / 6)
  *   mastery  = quality * coverage
@@ -101,7 +116,7 @@ export function computeSkill(
   if (level < 3) {
     gate =
       mastery >= 0.55 && !hasApply
-        ? "Needs a passing lab or variant scenario (>=60% rubric/score) to reach Adapt."
+        ? "Needs a passing lab or scenario check (>=60%) to reach Adapt."
         : "Build evidence coverage with retrieval checks and structured explain-backs.";
   } else if (level < 4) {
     gate = hasArtifact
@@ -174,6 +189,7 @@ export interface SkillGapRecommendation {
   code: string;
   title: string;
   currentLevel: Level;
+  targetLevel?: Level;
   freshness: FreshnessStatus;
   priority: "high" | "medium" | "low";
   reason: string;
@@ -181,15 +197,17 @@ export interface SkillGapRecommendation {
   actionHref: string;
 }
 
-/** Identifies prioritized competency gaps based on prerequisites, staleness, and learner goals. */
+/** Identifies prioritized competency gaps based on prerequisites, staleness, target role, and goals. */
 export function recommendLearningPath(
   progress: SkillProgress[],
   completed: string[],
   goals: string[] = [],
   now = Date.now(),
+  targetRoleId?: string,
 ): SkillGapRecommendation[] {
   const byId = new Map(progress.map((p) => [p.skillId, p]));
   const goalSkillIds = new Set(goals.flatMap((g) => inferCompetenciesFromText(g).map((c) => c.id)));
+  const role = roleProfileById(targetRoleId);
 
   const recs: SkillGapRecommendation[] = [];
 
@@ -199,7 +217,10 @@ export function recommendLearningPath(
     const prereqsMet = comp.prerequisites.every((pid) => (byId.get(pid)?.level ?? 0) >= 1);
     if (!prereqsMet && p.level === 0) continue;
 
-    const matchesGoal = goalSkillIds.has(comp.id);
+    const roleTarget = role?.requiredLevels[comp.id];
+    const hasRoleGap = typeof roleTarget === "number" && p.level < roleTarget;
+    const matchesGoal = goalSkillIds.has(comp.id) || hasRoleGap;
+
     const lab = LABS.find((l) => l.skillId === comp.id);
     const lesson = allLessons().find(
       (x) =>
@@ -217,10 +238,13 @@ export function recommendLearningPath(
         code: comp.code,
         title: comp.title,
         currentLevel: p.level,
+        ...(roleTarget ? { targetLevel: roleTarget } : {}),
         freshness: p.freshness,
         priority: "high",
         reason:
-          "Evidence is aging — run a retrieval check or scenario variant to verify retention.",
+          hasRoleGap && role
+            ? `Aging evidence on a ${role.title} target competency (L${p.level} → L${roleTarget}). Refresh with a check or lab.`
+            : "Evidence is aging — run a retrieval check or scenario variant to verify retention.",
         actionLabel: lab ? "Practice variant" : "Review lesson",
         actionHref: lab
           ? `/labs#${lab.id}`
@@ -231,17 +255,21 @@ export function recommendLearningPath(
       continue;
     }
 
-    if (p.level === 2 && lab) {
+    if (p.level >= 2 && p.level < 4 && lab && (p.level === 2 || hasRoleGap)) {
       recs.push({
         skillId: comp.id,
         code: comp.code,
         title: comp.title,
         currentLevel: p.level,
+        ...(roleTarget ? { targetLevel: roleTarget } : {}),
         freshness: p.freshness,
         priority: matchesGoal ? "high" : "medium",
-        reason: matchesGoal
-          ? `Aligned with your stated goal. Complete a rubric-evaluated lab to advance from Know to Adapt.`
-          : "Conceptual baseline reached; apply it under a constraint twist to reach Adapt.",
+        reason:
+          hasRoleGap && role
+            ? `Required for ${role.title} (currently L${p.level}, target L${roleTarget}). Complete ${lab.title} with structured rubric reflection.`
+            : matchesGoal
+              ? "Aligned with your stated goal. Complete the domain lab to advance from Know to Adapt."
+              : "Conceptual baseline reached; apply it under a constraint twist to reach Adapt.",
         actionLabel: `Open ${lab.title}`,
         actionHref: `/labs#${lab.id}`,
       });
@@ -254,11 +282,15 @@ export function recommendLearningPath(
         code: comp.code,
         title: comp.title,
         currentLevel: p.level,
+        ...(roleTarget ? { targetLevel: roleTarget } : {}),
         freshness: p.freshness,
         priority: matchesGoal ? "high" : p.level === 0 ? "medium" : "low",
-        reason: matchesGoal
-          ? `Directly supports your learning goal (${comp.code}).`
-          : `Unblocked foundation (${comp.code}) — build baseline evidence.`,
+        reason:
+          hasRoleGap && role
+            ? `Role gap for ${role.title} (${comp.code}: L${p.level} → target L${roleTarget}).`
+            : matchesGoal
+              ? `Directly supports your learning goal (${comp.code}).`
+              : `Unblocked foundation (${comp.code}) — build baseline evidence.`,
         actionLabel: `Study ${lesson.lesson.title}`,
         actionHref: lessonHref(lesson.path.slug, lesson.lesson.slug),
       });
@@ -266,7 +298,7 @@ export function recommendLearningPath(
   }
 
   const weight = { high: 0, medium: 1, low: 2 };
-  return recs.sort((a, b) => weight[a.priority] - weight[b.priority]).slice(0, 5);
+  return recs.sort((a, b) => weight[a.priority] - weight[b.priority]).slice(0, 6);
 }
 
 export function nextBestStep(
@@ -274,8 +306,10 @@ export function nextBestStep(
   completed: string[],
   now = Date.now(),
   goals: string[] = [],
+  targetRoleId?: string,
 ): NextStep {
   const byId = new Map(progress.map((p) => [p.skillId, p]));
+  const role = roleProfileById(targetRoleId);
 
   // 1. Review anything that has gone stale.
   const stale = progress
@@ -297,11 +331,20 @@ export function nextBestStep(
       };
   }
 
-  // 2. Goal-aligned unblocked skill first, then lowest level among unblocked skills.
+  // 2. Role-gap & goal-aligned unblocked skill first, then lowest level among unblocked skills.
   const goalSkillIds = new Set(goals.flatMap((g) => inferCompetenciesFromText(g).map((c) => c.id)));
   const open = SKILLS.filter((s) =>
     s.prerequisites.every((p) => (byId.get(p)?.level ?? 0) >= 1),
   ).sort((a, b) => {
+    const aRoleGap =
+      role?.requiredLevels[a.id] && (byId.get(a.id)?.level ?? 0) < role.requiredLevels[a.id]!
+        ? 0
+        : 1;
+    const bRoleGap =
+      role?.requiredLevels[b.id] && (byId.get(b.id)?.level ?? 0) < role.requiredLevels[b.id]!
+        ? 0
+        : 1;
+    if (aRoleGap !== bRoleGap) return aRoleGap - bRoleGap;
     const aGoal = goalSkillIds.has(a.id) ? 0 : 1;
     const bGoal = goalSkillIds.has(b.id) ? 0 : 1;
     if (aGoal !== bGoal) return aGoal - bGoal;
@@ -310,6 +353,7 @@ export function nextBestStep(
 
   for (const skill of open) {
     const lvl = byId.get(skill.id)?.level ?? 0;
+    const roleTarget = role?.requiredLevels[skill.id];
     const lesson = allLessons().find(
       (x) =>
         x.lesson.skillIds.includes(skill.id) &&
@@ -320,9 +364,12 @@ export function nextBestStep(
         kind: "lesson",
         title: lesson.lesson.title,
         href: lessonHref(lesson.path.slug, lesson.lesson.slug),
-        reason: goalSkillIds.has(skill.id)
-          ? `Aligned with your goal — builds ${skill.title}.`
-          : `Builds ${skill.title}, the lowest unblocked competency right now.`,
+        reason:
+          role && roleTarget && lvl < roleTarget
+            ? `Selected role (${role.title}) targets L${roleTarget} in ${skill.title} (currently L${lvl}).`
+            : goalSkillIds.has(skill.id)
+              ? `Aligned with your goal — builds ${skill.title}.`
+              : `Builds ${skill.title}, the lowest unblocked competency right now.`,
         skillId: skill.id,
       };
     const lab = LABS.find((l) => l.skillId === skill.id);
@@ -331,7 +378,7 @@ export function nextBestStep(
         kind: "lab",
         title: lab.title,
         href: `/labs#${lab.id}`,
-        reason: `You hold a conceptual model for ${skill.title}. Apply it in a rubric-evaluated lab to reach Adapt.`,
+        reason: `You hold a conceptual model for ${skill.title}. Apply it in a hands-on lab with structured rubric criteria to reach Adapt.`,
         skillId: skill.id,
       };
     if (lesson)

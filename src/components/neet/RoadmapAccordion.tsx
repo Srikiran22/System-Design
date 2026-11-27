@@ -17,23 +17,23 @@ export default function RoadmapAccordion({ path }: { path: Path }) {
         const isOpen = !!open[m.slug];
         const panelId = `panel-${m.slug}`;
         return (
-          <li key={m.slug} className="rounded-3xl bg-surface">
+          <li key={m.slug} className="overflow-hidden rounded-lg border border-line bg-surface-2">
             <h3>
               <button
                 type="button"
                 aria-expanded={isOpen}
                 aria-controls={panelId}
                 onClick={() => setOpen((o) => ({ ...o, [m.slug]: !o[m.slug] }))}
-                className="flex w-full items-center gap-4 p-5 text-left"
+                className="flex w-full items-center gap-4 p-5 text-left transition-colors hover:bg-surface-3/40"
               >
-                <span className="font-label text-sm text-accent">
+                <span className="font-mono text-sm font-semibold text-accent">
                   {String(mi + 1).padStart(2, "0")}
                 </span>
                 <span className="flex-1">
-                  <span className="block font-display text-xl text-text">{m.title}</span>
+                  <span className="block font-display text-xl font-bold text-text">{m.title}</span>
                   <span className="block text-sm text-muted">{m.summary}</span>
                 </span>
-                <span className="font-label text-xs text-muted">
+                <span className="font-mono text-xs tabular-nums text-muted">
                   {done}/{m.lessons.length}
                 </span>
                 <svg
@@ -51,29 +51,35 @@ export default function RoadmapAccordion({ path }: { path: Path }) {
               </button>
             </h3>
             {isOpen && (
-              <ul id={panelId} className="border-t border-line">
+              <ul id={panelId} className="border-t border-line bg-surface-1">
                 {m.lessons.map((l) => {
                   const isDone = completed.includes(lessonKey(path.slug, l.slug));
                   return (
                     <li key={l.slug} className="border-b border-line last:border-b-0">
                       <Link
                         href={lessonHref(path.slug, l.slug)}
-                        className="flex items-start gap-4 px-5 py-4 hover:bg-surface-2"
+                        className="flex items-start gap-4 px-5 py-4 transition-colors hover:bg-surface-2"
                       >
                         <span
                           aria-hidden
-                          className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ${isDone ? "border-accent bg-accent text-bg" : "border-line text-transparent"}`}
+                          className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold ${
+                            isDone
+                              ? "border-accent bg-accent text-bg"
+                              : "border-line text-transparent"
+                          }`}
                         >
                           ✓
                         </span>
                         <span className="flex-1">
-                          <span className="block text-text">
+                          <span className="block font-medium text-text">
                             {l.title}
                             {isDone && <span className="sr-only"> (completed)</span>}
                           </span>
                           <span className="block text-sm text-muted">{l.summary}</span>
                         </span>
-                        <span className="font-label text-xs text-muted">{l.minutes} min</span>
+                        <span className="font-mono text-xs tabular-nums text-muted">
+                          {l.minutes} min
+                        </span>
                       </Link>
                     </li>
                   );

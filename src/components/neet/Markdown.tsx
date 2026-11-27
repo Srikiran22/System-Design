@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import Link from "./AppLink";
 import { slugify } from "./LessonBlocks";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { CITATION_ALIASES, getEnrichedSource } from "@/lib/neet/sourceEnrichment";
+import { CITATION_ALIASES, type CitationTooltipData } from "@/lib/neet/citationAliases";
 
 function text(children: unknown): string {
   if (typeof children === "string") return children;
@@ -28,13 +28,13 @@ function enrichMarkdownCitations(body: string): string {
         // Check for multiple or single S-id: e.g. S01, S02 or S274, S275
         const sMatches = trimmed.match(/S\d{2,3}/g);
         if (sMatches && sMatches.length > 0 && /^[S\d\s,–—-]+$/.test(trimmed)) {
-          return sMatches.map((sid: string) => `[${sid}](cite:${sid})`).join(" ");
+          return sMatches.map((sid: string) => `[${sid}](/sources#${sid})`).join(" ");
         }
 
         // Check verified alias table only (never fabricate unmapped standard links)
         if (CITATION_ALIASES[trimmed]) {
           const canonical = CITATION_ALIASES[trimmed];
-          return `[${trimmed}](cite:${canonical})`;
+          return `[${trimmed}](/sources#${canonical})`;
         }
 
         return match;
@@ -43,17 +43,28 @@ function enrichMarkdownCitations(body: string): string {
     .join("");
 }
 
-function CitationPill({ sourceId, label }: { sourceId: string; label: string }) {
+function CitationPill({
+  sourceId,
+  label,
+  citationMap,
+}: {
+  sourceId: string;
+  label: string;
+  citationMap?: Record<string, CitationTooltipData>;
+}) {
   const canonicalId = CITATION_ALIASES[sourceId] || sourceId;
-  const enriched = getEnrichedSource(canonicalId);
+  const enriched = citationMap?.[canonicalId];
   const href = `/sources#${canonicalId}`;
   const displayLabel = label.startsWith("[") && label.endsWith("]") ? label : `[${label}]`;
 
   if (!enriched) {
     return (
-      <span className="mx-0.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-muted">
+      <Link
+        href={href}
+        className="mx-0.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-muted hover:text-accent"
+      >
         {displayLabel}
-      </span>
+      </Link>
     );
   }
 
@@ -103,9 +114,11 @@ function CitationPill({ sourceId, label }: { sourceId: string; label: string }) 
 export default function Markdown({
   body,
   fileMap,
+  citationMap,
 }: {
   body: string;
   fileMap: Record<string, string>;
+  citationMap?: Record<string, CitationTooltipData>;
 }) {
   const enrichedBody = useMemo(() => enrichMarkdownCitations(body), [body]);
 
@@ -140,7 +153,7 @@ export default function Markdown({
             <ol className="my-4 list-decimal space-y-1.5 pl-6 marker:text-muted">{children}</ol>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="my-6 rounded-2xl border-l-4 border-accent bg-surface px-5 py-1 text-muted">
+            <blockquote className="my-6 rounded-lg border border-line bg-surface-2 px-5 py-2 text-muted">
               {children}
             </blockquote>
           ),
@@ -149,37 +162,51 @@ export default function Markdown({
             className ? (
               <code className={className}>{children}</code>
             ) : (
-              <code className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.9em]">{children}</code>
+              <code className="rounded bg-surface-3 px-1.5 py-0.5 text-[0.9em] text-accent">
+                {children}
+              </code>
             ),
           pre: ({ children }) => (
-            <pre className="my-6 overflow-x-auto rounded-2xl bg-surface p-5 text-sm leading-6">
+            <pre className="my-6 overflow-x-auto rounded-lg border border-line bg-surface-1 p-5 text-sm leading-6">
               {children}
             </pre>
           ),
           table: ({ children }) => (
-            <div className="my-6 overflow-x-auto rounded-2xl border border-line">
+            <div className="my-6 overflow-x-auto rounded-lg border border-line">
               <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-surface text-xs uppercase tracking-wide text-muted">
+            <thead className="bg-surface-2 text-xs uppercase tracking-wide text-muted">
               {children}
             </thead>
           ),
-          th: ({ children }) => <th className="px-4 py-3 font-medium">{children}</th>,
+          th: ({ children }) => <th className="px-4 py-3 font-semibold">{children}</th>,
           td: ({ children }) => (
             <td className="border-t border-line px-4 py-3 align-top">{children}</td>
           ),
           a: ({ href = "", children }) => {
             if (href.startsWith("cite:")) {
               const rawId = href.replace("cite:", "");
-              return <CitationPill sourceId={rawId} label={text(children)} />;
+              return (
+                <CitationPill
+                  sourceId={rawId}
+                  label={text(children)}
+                  {...(citationMap ? { citationMap } : {})}
+                />
+              );
             }
             if (/^\/sources#S\d{2,3}$/i.test(href) || /^#S\d{2,3}$/i.test(href)) {
               const rawId = href.split("#")[1]!;
-              return <CitationPill sourceId={rawId} label={text(children)} />;
+              return (
+                <CitationPill
+                  sourceId={rawId}
+                  label={text(children)}
+                  {...(citationMap ? { citationMap } : {})}
+                />
+              );
             }
             const file = href.split("#")[0]!.split("/").pop()!;
             const slug = fileMap[file];
