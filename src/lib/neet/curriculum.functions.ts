@@ -46,6 +46,7 @@ import type { Block, Discipline, Lesson } from "./types";
 import {
   CANONICAL_COMPETENCY_IDS,
   findCompetencyReferences,
+  validateCanonicalCompetencyDefinition,
   validateCompetencyGraphReferences,
   validateCourseBundleReferences,
   validateRoleProfileReferences,
@@ -1155,7 +1156,7 @@ export const upsertCompetency = createServerFn({ method: "POST" })
         return res;
       }
 
-      const supportedErrors = validateSupportedCompetencyIds([data.id]);
+      const supportedErrors = validateCanonicalCompetencyDefinition(data);
       if (supportedErrors.length > 0) {
         return fail(supportedErrors.join(" "), "validation_error");
       }
