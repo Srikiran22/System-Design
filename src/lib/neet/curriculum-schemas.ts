@@ -178,7 +178,7 @@ export const rubricDefinitionSchema: z.ZodType<RubricDefinition> = z
 export const labUpsertSchema = z.object({
   id: z.string().trim().min(2).max(120).regex(SLUG_RE, "Lab ID must be lowercase kebab-case"),
   discipline: disciplineSchema.default("design"),
-  skillId: z.string().trim().min(1).max(100),
+  skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
   title: z.string().trim().min(2).max(200),
   brief: z.string().trim().min(5).max(1000),
   minutes: z.number().int().min(5).max(600),
@@ -208,7 +208,7 @@ export const scenarioUpsertSchema = z
       .min(2)
       .max(120)
       .regex(SLUG_RE, "Scenario ID must be lowercase kebab-case"),
-    skillId: z.string().trim().min(1).max(100),
+    skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
     title: z.string().trim().min(3).max(200),
     domainContext: z.string().trim().min(3).max(300),
     situation: z.string().trim().min(10).max(2000),
@@ -372,7 +372,7 @@ export const capstoneUpsertSchema = z.object({
         traceStage: z.string().trim().min(2).max(120),
         designReviewGate: z.string().trim().min(2).max(160),
         upstreamMilestoneIds: z.array(z.string().trim().min(1).max(120)).max(10),
-        skillIds: z.array(z.string().trim().min(1).max(100)).min(1).max(10),
+        skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
         evidenceType: z.literal("artifact"),
         deliverables: z.array(z.string().trim().min(3).max(400)).min(1).max(12),
         traceabilityLink: z.string().trim().min(3).max(300),
