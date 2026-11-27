@@ -1,0 +1,44 @@
+name: Format Curriculum Repair Branch
+
+on:
+  push:
+    branches:
+      - fix/post-merge-curriculum-repair
+    paths:
+      - ".github/workflows/format-curriculum-repair.yml"
+      - "src/lib/neet/curriculum-integrity.ts"
+      - "src/lib/neet/curriculum-db.server.ts"
+      - "src/lib/neet/curriculum.functions.ts"
+      - "src/lib/neet/curriculum-schemas.ts"
+      - "src/lib/neet/curriculum.server.test.ts"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.event.head_commit.message != 'style: apply Prettier to curriculum repair files'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/post-merge-curriculum-repair
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Apply repository Prettier configuration
+        run: npx prettier --write src/lib/neet/curriculum-integrity.ts src/lib/neet/curriculum-db.server.ts src/lib/neet/curriculum.functions.ts src/lib/neet/curriculum-schemas.ts src/lib/neet/curriculum.server.test.ts
+      - name: Commit formatter output to repair branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/neet/curriculum-integrity.ts src/lib/neet/curriculum-db.server.ts src/lib/neet/curriculum.functions.ts src/lib/neet/curriculum-schemas.ts src/lib/neet/curriculum.server.test.ts
+          if git diff --cached --quiet; then
+            echo "The five source files already match Prettier."
+            exit 0
+          fi
+          git commit -m "style: apply Prettier to curriculum repair files"
+          git push origin HEAD:fix/post-merge-curriculum-repair
