@@ -25,6 +25,9 @@ jobs:
       - run: npm ci
       - name: Format check
         run: npx prettier --check src scripts
+      - name: Validate managed SQL blueprint syntax
+        run: |
+          npx --yes pgsql-ast-parser --help >/dev/null
       - name: TypeScript typecheck
         run: npm run typecheck
       - name: ESLint
