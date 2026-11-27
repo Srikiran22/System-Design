@@ -84,7 +84,7 @@ export const lessonBlockSchema: z.ZodType<Block> = z.discriminatedUnion("t", [
   z.object({
     t: z.literal("pause"),
     id: z.string().trim().min(1).max(120),
-    skillId: z.string().trim().min(1).max(100),
+    skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
     q: z.string().trim().min(5).max(1000),
     options: z.array(z.string().trim().min(1).max(500)).min(2).max(6),
     answer: z.number().int().min(0).max(5),
@@ -135,7 +135,7 @@ export const lessonUpsertSchema = z.object({
   title: z.string().trim().min(2).max(200),
   summary: z.string().trim().min(2).max(600),
   minutes: z.number().int().min(1).max(600),
-  skillIds: z.array(z.string().trim().min(1).max(100)).min(1).max(10),
+  skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
   blocks: z.array(lessonBlockSchema).min(1).max(120),
   keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
   status: publishStatusSchema.default("published"),
@@ -237,11 +237,11 @@ export const competencyUpsertSchema = z.object({
   blurb: z.string().trim().min(2).max(400),
   definition: z.string().trim().min(10).max(1200),
   bloomTarget: z.enum(["apply", "analyze", "evaluate", "create"]),
-  prerequisites: z.array(z.string().trim().min(1).max(100)).max(12).default([]),
+  prerequisites: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Prerequisite IDs must be lowercase kebab-case")).max(12).default([]),
   relations: z
     .array(
       z.object({
-        targetId: z.string().trim().min(1).max(100),
+        targetId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Related competency IDs must be lowercase kebab-case"),
         kind: z.enum(["assumes", "extends", "related"]),
       }),
     )
@@ -290,7 +290,25 @@ export const competencyUpsertSchema = z.object({
         .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
         .min(1),
     }),
-  ]),
+  ]).superRefine((descriptors, ctx) => {
+    const expectedStages = ["Search", "Know", "Adapt", "Proceed"] as const;
+    descriptors.forEach((descriptor, index) => {
+      if (descriptor.level !== index + 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index, "level"],
+          message: "Competency level descriptors must be ordered exactly 1, 2, 3, 4.",
+        });
+      }
+      if (descriptor.stage !== expectedStages[index]) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index, "stage"],
+          message: "Level " + (index + 1) + " must use the matching progression stage.",
+        });
+      }
+    });
+  }),
   mappedVolumes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
   roleTags: z.array(z.string().trim().min(1).max(120)).max(15).default([]),
   version: z.string().trim().min(1).max(40).default("2.0.0"),
@@ -322,7 +340,7 @@ export const roleProfileUpsertSchema = z.object({
   disclaimer: z.string().trim().min(10).max(600),
   summary: z.string().trim().min(10).max(800),
   requiredLevels: z.record(
-    z.string().min(1),
+    z.string().trim().min(2).max(100).regex(SLUG_RE, "Required competency IDs must be lowercase kebab-case"),
     z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   ),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
@@ -395,6 +413,49 @@ export const courseBundleSchema = z.object({
   competencies: z.array(competencyUpsertSchema).max(50).optional(),
   labs: z.array(labUpsertSchema).max(50).optional(),
   scenarios: z.array(scenarioUpsertSchema).max(50).optional(),
+}).superRefine((bundle, ctx) => {
+  const checkUnique = (values: Array<{ value: string; path: (string | number)[] }>, label: string) => {
+    const seen = new Set<string>();
+    for (const item of values) {
+      if (seen.has(item.value)) {
+        ctx.addIssue({
+          code: "custom",
+          path: item.path,
+          message: "Duplicate " + label + " " + item.value + " in course bundle.",
+        });
+      }
+      seen.add(item.value);
+    }
+  };
+  checkUnique(
+    bundle.modules.map((module, index) => ({ value: module.slug, path: ["modules", index, "slug"] })),
+    "module slug",
+  );
+  checkUnique(
+    bundle.modules.flatMap((module, moduleIndex) =>
+      module.lessons.map((lesson, lessonIndex) => ({
+        value: lesson.slug,
+        path: ["modules", moduleIndex, "lessons", lessonIndex, "slug"],
+      })),
+    ),
+    "lesson slug",
+  );
+  checkUnique(
+    bundle.competencies?.map((item, index) => ({ value: item.id, path: ["competencies", index, "id"] })) ?? [],
+    "competency ID",
+  );
+  checkUnique(
+    bundle.competencies?.map((item, index) => ({ value: item.code, path: ["competencies", index, "code"] })) ?? [],
+    "competency code",
+  );
+  checkUnique(
+    bundle.labs?.map((item, index) => ({ value: item.id, path: ["labs", index, "id"] })) ?? [],
+    "lab ID",
+  );
+  checkUnique(
+    bundle.scenarios?.map((item, index) => ({ value: item.id, path: ["scenarios", index, "id"] })) ?? [],
+    "scenario ID",
+  );
 });
 export type CourseBundleInput = z.infer<typeof courseBundleSchema>;
 
