@@ -148,6 +148,29 @@ export const lessonUpsertSchema = z.object({
   keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
   status: publishStatusSchema.default("published"),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
+}).superRefine((lesson, ctx) => {
+  const skillIds = new Set(lesson.skillIds);
+  const seenSkillIds = new Set<string>();
+  lesson.skillIds.forEach((skillId, index) => {
+    if (seenSkillIds.has(skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skillIds", index],
+        message: "A lesson may map each competency only once.",
+      });
+    }
+    seenSkillIds.add(skillId);
+  });
+
+  lesson.blocks.forEach((block, index) => {
+    if (block.t === "pause" && !skillIds.has(block.skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blocks", index, "skillId"],
+        message: "Pause checks must map to a competency declared in the lesson skillIds.",
+      });
+    }
+  });
 });
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
@@ -505,6 +528,29 @@ export const courseBundleSchema = z.object({
       path: ["scenarios", index, "id"],
     })) ?? [],
     "scenario ID",
+  );
+  checkUnique(
+    bundle.modules.flatMap((module, moduleIndex) =>
+      module.lessons.flatMap((lesson, lessonIndex) =>
+        lesson.blocks.flatMap((block, blockIndex) =>
+          block.t === "pause"
+            ? [{
+                value: block.id,
+                path: [
+                  "modules",
+                  moduleIndex,
+                  "lessons",
+                  lessonIndex,
+                  "blocks",
+                  blockIndex,
+                  "id",
+                ],
+              }]
+            : [],
+        ),
+      ),
+    ),
+    "pause-check ID",
   );
 });
 export type CourseBundleInput = z.infer<typeof courseBundleSchema>;
