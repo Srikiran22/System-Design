@@ -84,7 +84,12 @@ export const lessonBlockSchema: z.ZodType<Block> = z.discriminatedUnion("t", [
   z.object({
     t: z.literal("pause"),
     id: z.string().trim().min(1).max(120),
-    skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+    skillId: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
     q: z.string().trim().min(5).max(1000),
     options: z.array(z.string().trim().min(1).max(500)).min(2).max(6),
     answer: z.number().int().min(0).max(5),
@@ -135,7 +140,10 @@ export const lessonUpsertSchema = z.object({
   title: z.string().trim().min(2).max(200),
   summary: z.string().trim().min(2).max(600),
   minutes: z.number().int().min(1).max(600),
-  skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
+  skillIds: z
+    .array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"))
+    .min(1)
+    .max(10),
   blocks: z.array(lessonBlockSchema).min(1).max(120),
   keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
   status: publishStatusSchema.default("published"),
@@ -237,11 +245,26 @@ export const competencyUpsertSchema = z.object({
   blurb: z.string().trim().min(2).max(400),
   definition: z.string().trim().min(10).max(1200),
   bloomTarget: z.enum(["apply", "analyze", "evaluate", "create"]),
-  prerequisites: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Prerequisite IDs must be lowercase kebab-case")).max(12).default([]),
+  prerequisites: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(2)
+        .max(100)
+        .regex(SLUG_RE, "Prerequisite IDs must be lowercase kebab-case"),
+    )
+    .max(12)
+    .default([]),
   relations: z
     .array(
       z.object({
-        targetId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Related competency IDs must be lowercase kebab-case"),
+        targetId: z
+          .string()
+          .trim()
+          .min(2)
+          .max(100)
+          .regex(SLUG_RE, "Related competency IDs must be lowercase kebab-case"),
         kind: z.enum(["assumes", "extends", "related"]),
       }),
     )
@@ -340,7 +363,12 @@ export const roleProfileUpsertSchema = z.object({
   disclaimer: z.string().trim().min(10).max(600),
   summary: z.string().trim().min(10).max(800),
   requiredLevels: z.record(
-    z.string().trim().min(2).max(100).regex(SLUG_RE, "Required competency IDs must be lowercase kebab-case"),
+    z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(SLUG_RE, "Required competency IDs must be lowercase kebab-case"),
     z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   ),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
@@ -372,7 +400,10 @@ export const capstoneUpsertSchema = z.object({
         traceStage: z.string().trim().min(2).max(120),
         designReviewGate: z.string().trim().min(2).max(160),
         upstreamMilestoneIds: z.array(z.string().trim().min(1).max(120)).max(10),
-        skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
+        skillIds: z
+        .array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"))
+        .min(1)
+        .max(10),
         evidenceType: z.literal("artifact"),
         deliverables: z.array(z.string().trim().min(3).max(400)).min(1).max(12),
         traceabilityLink: z.string().trim().min(3).max(300),
@@ -414,7 +445,10 @@ export const courseBundleSchema = z.object({
   labs: z.array(labUpsertSchema).max(50).optional(),
   scenarios: z.array(scenarioUpsertSchema).max(50).optional(),
 }).superRefine((bundle, ctx) => {
-  const checkUnique = (values: Array<{ value: string; path: (string | number)[] }>, label: string) => {
+  const checkUnique = (
+    values: Array<{ value: string; path: (string | number)[] }>,
+    label: string,
+  ) => {
     const seen = new Set<string>();
     for (const item of values) {
       if (seen.has(item.value)) {
@@ -427,8 +461,12 @@ export const courseBundleSchema = z.object({
       seen.add(item.value);
     }
   };
+
   checkUnique(
-    bundle.modules.map((module, index) => ({ value: module.slug, path: ["modules", index, "slug"] })),
+    bundle.modules.map((module, index) => ({
+      value: module.slug,
+      path: ["modules", index, "slug"],
+    })),
     "module slug",
   );
   checkUnique(
@@ -441,19 +479,31 @@ export const courseBundleSchema = z.object({
     "lesson slug",
   );
   checkUnique(
-    bundle.competencies?.map((item, index) => ({ value: item.id, path: ["competencies", index, "id"] })) ?? [],
+    bundle.competencies?.map((item, index) => ({
+      value: item.id,
+      path: ["competencies", index, "id"],
+    })) ?? [],
     "competency ID",
   );
   checkUnique(
-    bundle.competencies?.map((item, index) => ({ value: item.code, path: ["competencies", index, "code"] })) ?? [],
+    bundle.competencies?.map((item, index) => ({
+      value: item.code,
+      path: ["competencies", index, "code"],
+    })) ?? [],
     "competency code",
   );
   checkUnique(
-    bundle.labs?.map((item, index) => ({ value: item.id, path: ["labs", index, "id"] })) ?? [],
+    bundle.labs?.map((item, index) => ({
+      value: item.id,
+      path: ["labs", index, "id"],
+    })) ?? [],
     "lab ID",
   );
   checkUnique(
-    bundle.scenarios?.map((item, index) => ({ value: item.id, path: ["scenarios", index, "id"] })) ?? [],
+    bundle.scenarios?.map((item, index) => ({
+      value: item.id,
+      path: ["scenarios", index, "id"],
+    })) ?? [],
     "scenario ID",
   );
 });
