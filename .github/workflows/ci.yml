@@ -23,6 +23,20 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      - name: Format curriculum files and print exact patch
+        run: |
+          npx prettier --write \
+            src/lib/neet/curriculum-db.server.ts \
+            src/lib/neet/curriculum-integrity.ts \
+            src/lib/neet/curriculum-schemas.ts \
+            src/lib/neet/curriculum.functions.ts \
+            src/lib/neet/curriculum.server.test.ts
+          git diff --no-ext-diff -- \
+            src/lib/neet/curriculum-db.server.ts \
+            src/lib/neet/curriculum-integrity.ts \
+            src/lib/neet/curriculum-schemas.ts \
+            src/lib/neet/curriculum.functions.ts \
+            src/lib/neet/curriculum.server.test.ts
       - name: Format check
         run: npx prettier --check src scripts
       - name: TypeScript typecheck
