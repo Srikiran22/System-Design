@@ -27,6 +27,7 @@ import {
   courseBundleSchema,
   detectCompetencyCycles,
   labUpsertSchema,
+  lessonUpsertSchema,
   scenarioUpsertSchema,
 } from "./curriculum-schemas";
 import { validateCompetencyGraphReferences } from "./curriculum-integrity";
@@ -255,6 +256,45 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(getCourseBySlugDb("custom-systems-101", { includeDrafts: true, db })).toBeNull();
   });
 
+  it("keeps pause checks mapped to lesson skills and pause IDs unique across a course", () => {
+    const invalidLesson = lessonUpsertSchema.safeParse({
+      courseId: "test-course",
+      moduleId: "test-module",
+      slug: "invalid-pause-map",
+      title: "Invalid Pause Mapping",
+      summary: "The pause check references an undeclared skill.",
+      minutes: 10,
+      skillIds: ["sd-reliability"],
+      blocks: [
+        {
+          t: "pause",
+          id: "pause-missing-skill",
+          skillId: "missing-skill",
+          q: "Which choice is correct?",
+          options: ["A", "B"],
+          answer: 0,
+          why: "The explanation is supplied.",
+        },
+      ],
+      keep: [],
+      status: "draft",
+      sortOrder: 1,
+    });
+    expect(invalidLesson.success).toBe(false);
+
+    const templatePath = path.resolve(
+      process.cwd(),
+      "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json",
+    );
+    const bundle = JSON.parse(fs.readFileSync(templatePath, "utf-8"));
+    const existingLesson = bundle.modules[0].lessons[0];
+    bundle.modules[0].lessons.push({
+      ...existingLesson,
+      slug: "second-lesson",
+      title: "Second Lesson",
+    });
+    expect(courseBundleSchema.safeParse(bundle).success).toBe(false);
+  });
   it("detects circular prerequisite graphs and dangling references", () => {
     const cycles = detectCompetencyCycles([
       { id: "comp-a", prerequisites: ["comp-b"] },
