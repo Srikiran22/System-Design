@@ -23,6 +23,20 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      - name: Format touched screens and show patch
+        run: |
+          npx prettier --write \
+            src/components/neet/Footer.tsx \
+            src/components/neet/Nav.tsx \
+            src/routes/__root.tsx \
+            src/routes/index.tsx \
+            src/routes/library.index.tsx
+          git diff --no-ext-diff -- \
+            src/components/neet/Footer.tsx \
+            src/components/neet/Nav.tsx \
+            src/routes/__root.tsx \
+            src/routes/index.tsx \
+            src/routes/library.index.tsx
       - name: Format check
         run: npx prettier --check src scripts
       - name: TypeScript typecheck
