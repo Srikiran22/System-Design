@@ -10,9 +10,7 @@ export default function Footer() {
               N
             </span>
             <div>
-              <span className="font-display text-sm font-bold tracking-tight text-text">
-                NEET
-              </span>
+              <span className="font-display text-sm font-bold tracking-tight text-text">NEET</span>
             </div>
           </div>
 
