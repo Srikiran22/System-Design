@@ -23,8 +23,13 @@ export function validateSupportedCompetencyIds(
 ): string[] {
   return competencyIds
     .filter((id) => !supportedIds.has(id))
-    .map((id) =>
-      source + ' "' + id + '" is outside the current canonical 16-competency learning model. Map the content to an existing competency or version the learner model and UI together.',
+    .map(
+      (id) =>
+        source +
+        ' "' +
+        id +
+        '" is outside the current canonical 16-competency learning model. ' +
+        "Map the content to an existing competency or version the learner model and UI together.",
     );
 }
 
