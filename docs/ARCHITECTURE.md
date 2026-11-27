@@ -2,8 +2,6 @@
 
 ## 1. Product Scope
 
-
-
 NEET is an early-stage learning project focused on systems thinking, system design, and practical engineering. The current codebase includes a competency model, course material, practice labs, engineering scenarios, a capstone, and a source-backed knowledge pack.
 
 ## 2. Runtime & Framework Stack
