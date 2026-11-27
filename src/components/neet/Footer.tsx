@@ -13,9 +13,6 @@ export default function Footer() {
               <span className="font-display text-sm font-bold tracking-tight text-text">
                 NEET
               </span>
-              <p className="text-xs text-muted">
-                Learn. Practise. Build.
-              </p>
             </div>
           </div>
 
