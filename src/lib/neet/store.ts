@@ -323,7 +323,7 @@ function validateArtifactUrl(raw?: string): string | undefined {
 }
 
 export const actions = {
-  toggleComplete(key: string) {
+  toggleComplete(key: string, skillId?: string) {
     const s = read();
     const done = !s.completed.includes(key);
     const now = new Date().toISOString();
@@ -342,7 +342,8 @@ export const actions = {
       emitProgress({
         kind: "lesson",
         ref: key,
-        skillId: lessonSkill(key),
+        // Dynamic lessons pass their mapped competency directly; static lessons fall back to the source catalogue.
+        skillId: skillId ?? lessonSkill(key),
         occurredAt: now,
       });
     }
