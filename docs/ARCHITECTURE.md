@@ -7,7 +7,7 @@ NEET is an early-stage learning project focused on systems thinking, system desi
 ## 2. Runtime & Framework Stack
 
 - **Frontend / SSR**: React 19, TypeScript 5.8 (`exactOptionalPropertyTypes: true`), TanStack Start + TanStack Router (file-based routes), TanStack Query v5, Tailwind CSS v4, Radix UI primitives.
-- **Canonical Production Data Store & Auth**: Supabase PostgreSQL (owner-only RLS on user tables; public read-only RLS on knowledge pack tables) + Supabase Auth (`JWT` verified server-side via `supabase.auth.getUser()`).
+- **Canonical Production Data Store & Auth**: Supabase PostgreSQL (owner-only RLS on user tables; public read-only RLS on knowledge pack tables) + Supabase Auth (`JWT` claims verified server-side via `supabase.auth.getClaims()`).
 - **Local Dev / Test Data Store & Auth**: Synchronous `node:sqlite` (`.data/system_design.sqlite` by default, WAL mode; overridable with server-only `SQLITE_DB_PATH`) with server-side salted `scrypt` password hashing and `HttpOnly` HMAC-SHA256 session cookies (`iss: "neet-local-dev"`).
 
 ## 3. Trust Boundaries & Security Architecture
@@ -15,7 +15,7 @@ NEET is an early-stage learning project focused on systems thinking, system desi
 | Boundary | Enforcement Mechanism | Source Module |
 | --- | --- | --- |
 | **Environment Separation** | Local dev auth is strictly disabled when `NODE_ENV=production` OR when Supabase env vars are configured. | `src/lib/neet/auth-server.ts` |
-| **Token Verification** | Production tokens verified via `supabase.auth.getUser()`; dev tokens verified via HMAC-SHA256 + `timingSafeEqual` + UUID `sub` + `exp` + `iss`. `alg: "none"` is unconditionally rejected. | `src/lib/neet/auth-server.ts` |
+| **Token Verification** | Production tokens verified via `supabase.auth.getClaims()`; dev tokens verified via HMAC-SHA256 + `timingSafeEqual` + UUID `sub` + `exp` + `iss`. `alg: "none"` is unconditionally rejected. | `src/lib/neet/auth-server.ts` |
 | **Account Authorization** | Fail-closed `requireVerifiedAuth` middleware on all account RPCs (`getMe`, `signCommitment`, `addGoal`, `removeGoal`, `recordEvents`, `getLearnerSnapshotFn`, `exportDossier`, `getAuthenticatedDiagnostics`). No fallback default UUID exists. | `src/lib/neet/account.functions.ts` |
 | **Client Session Hygiene** | Zero passwords in browser storage; dev sessions live in `HttpOnly` cookies + JS memory only. `SIGNED_OUT` clears `QueryClient` cache and resets active progress store namespace to `guest`. | `src/lib/neet/auth-client.ts`, `src/routes/__root.tsx` |
 | **Security Headers** | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` (when served over HTTPS). | `src/start.ts` |
@@ -24,6 +24,8 @@ NEET is an early-stage learning project focused on systems thinking, system desi
 ## 4. Key Application Modules
 
 - `src/lib/neet/auth-server.ts` & `local-auth.functions.ts` — Server-side auth verification and local dev credential RPCs.
+- `src/lib/neet/curriculum.functions.ts` & `curriculum-schemas.ts` — Validated course, module, lesson, lab, scenario, capstone, and role operations with role-gated authoring and database/seed sources.
+- `src/lib/neet/library.functions.ts` — Public knowledge-pack reads, search, source register, research coverage, and redacted service readiness.
 - `src/lib/neet/sync-outbox.ts` & `src/components/neet/ProgressSync.tsx` — Account-scoped durable outbox, exponential retry backoff, ACK-gated backfill, and cross-device snapshot hydration.
 - `src/lib/neet/competencies.ts` — 16 formal competencies (`SE-ST-01`..`SE-EN-06`) anchored to INCOSE SECF 2e, SEBoK, NASA SE Handbook, and ISO/IEC/IEEE 15288/42010/29148 with DAG cycle validation.
 - `src/lib/neet/rubrics.ts` — Versioned 1–4 rubrics (`RUBRIC_VERSION = "1.0.0"`), deterministic `evaluateRubric()`, 4 worked engineering scenarios, and the 6-milestone traceable Capstone project.
