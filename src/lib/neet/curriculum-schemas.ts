@@ -127,7 +127,7 @@ export const moduleUpsertSchema = z.object({
 });
 export type ModuleUpsertInput = z.infer<typeof moduleUpsertSchema>;
 
-const lessonUpsertObjectSchema = z.object({
+const lessonUpsertFieldsSchema = z.object({
   id: z.string().trim().min(1).max(100).optional(),
   courseId: z.string().trim().min(1).max(100),
   moduleId: z.string().trim().min(1).max(100),
@@ -141,7 +141,9 @@ const lessonUpsertObjectSchema = z.object({
   summary: z.string().trim().min(2).max(600),
   minutes: z.number().int().min(1).max(600),
   skillIds: z
-    .array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"))
+    .array(
+      z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+    )
     .min(1)
     .max(10),
   blocks: z.array(lessonBlockSchema).min(1).max(120),
@@ -149,27 +151,27 @@ const lessonUpsertObjectSchema = z.object({
   status: publishStatusSchema.default("published"),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
+type LessonReferenceInput = Pick<z.infer<typeof lessonUpsertFieldsSchema>, "skillIds" | "blocks">;
+type LessonRefinementContext = Parameters<
+  Parameters<typeof lessonUpsertFieldsSchema.superRefine>[0]
+>[1];
 
-function addLessonCompetencyIssues(
-  skillIds: string[],
-  blocks: Block[],
-  ctx: z.RefinementCtx,
-) {
-  const knownSkills = new Set(skillIds);
-  const seenSkills = new Set<string>();
-  skillIds.forEach((skillId, index) => {
-    if (seenSkills.has(skillId)) {
+const validateLessonReferences = (lesson: LessonReferenceInput, ctx: LessonRefinementContext) => {
+  const skillIds = new Set(lesson.skillIds);
+  const seenSkillIds = new Set<string>();
+  lesson.skillIds.forEach((skillId, index) => {
+    if (seenSkillIds.has(skillId)) {
       ctx.addIssue({
         code: "custom",
         path: ["skillIds", index],
         message: "A lesson may map each competency only once.",
       });
     }
-    seenSkills.add(skillId);
+    seenSkillIds.add(skillId);
   });
 
-  blocks.forEach((block, index) => {
-    if (block.t === "pause" && !knownSkills.has(block.skillId)) {
+  lesson.blocks.forEach((block, index) => {
+    if (block.t === "pause" && !skillIds.has(block.skillId)) {
       ctx.addIssue({
         code: "custom",
         path: ["blocks", index, "skillId"],
@@ -177,11 +179,8 @@ function addLessonCompetencyIssues(
       });
     }
   });
-}
-
-export const lessonUpsertSchema = lessonUpsertObjectSchema.superRefine((lesson, ctx) => {
-  addLessonCompetencyIssues(lesson.skillIds, lesson.blocks, ctx);
-});
+};
+export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine(validateLessonReferences);
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
 export const rubricCriterionSchema = z.object({
@@ -488,11 +487,9 @@ export const courseBundleSchema = z
           sortOrder: z.number().int().min(0).max(10_000).optional(),
           lessons: z
             .array(
-              lessonUpsertObjectSchema
+              lessonUpsertFieldsSchema
                 .omit({ courseId: true, moduleId: true })
-                .superRefine((lesson, ctx) => {
-                  addLessonCompetencyIssues(lesson.skillIds, lesson.blocks, ctx);
-                }),
+                .superRefine(validateLessonReferences),
             )
             .min(1)
             .max(50),
