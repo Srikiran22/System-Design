@@ -30,9 +30,7 @@ export default function Nav() {
             <span className="flex h-8 w-8 items-center justify-center rounded bg-accent font-display text-xs font-bold text-bg">
               N
             </span>
-            <span className="font-display text-lg font-bold tracking-tight text-text">
-              NEET
-            </span>
+            <span className="font-display text-lg font-bold tracking-tight text-text">NEET</span>
           </Link>
 
           <nav

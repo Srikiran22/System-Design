@@ -22,14 +22,12 @@ export const Route = createFileRoute("/")({
       { title: "NEET" },
       {
         name: "description",
-        content:
-          "Study systems through lessons, exercises, and practical projects.",
+        content: "Study systems through lessons, exercises, and practical projects.",
       },
       { property: "og:title", content: "NEET" },
       {
         property: "og:description",
-        content:
-          "Explore courses, exercises, and projects in systems thinking and design.",
+        content: "Explore courses, exercises, and projects in systems thinking and design.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -482,9 +480,7 @@ function Home() {
           <div className="mb-12 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-end">
             <div>
               <span className="section-label">COURSES</span>
-              <h2 className="section-title text-3xl text-text sm:text-4xl">
-                Choose a subject
-              </h2>
+              <h2 className="section-title text-3xl text-text sm:text-4xl">Choose a subject</h2>
               <p className="mt-2 max-w-xl text-sm text-muted sm:text-base">
                 Browse the available courses by subject.
               </p>

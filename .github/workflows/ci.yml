@@ -37,7 +37,7 @@ jobs:
         run: npm run import:course -- --file docs/curriculum/COURSE_BUNDLE_TEMPLATE.json --dry-run
       - name: Production build
         run: npm run build
-      - name: Built application smoke checks
+      - name: Application route smoke checks
         run: npm run smoke
       - name: Dependency vulnerability audit (high/critical)
         run: npm audit --omit=dev --audit-level=high

@@ -13,8 +13,7 @@ export const Route = createFileRoute("/library/")({
     track: typeof s["track"] === "string" ? s["track"] : undefined,
   }),
   loader: () => listArticles(),
-  head: () =>
-    pageHead("Library", "Browse articles by subject."),
+  head: () => pageHead("Library", "Browse articles by subject."),
   errorComponent: ({ error }) => <LoadError error={error} />,
   component: Library,
 });
