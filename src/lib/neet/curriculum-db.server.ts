@@ -2,11 +2,13 @@ import crypto from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { getDatabase } from "./db.server";
 import {
+  CANONICAL_COMPETENCY_IDS,
   findCompetencyReferences,
   validateCompetencyGraphReferences,
   validateCourseBundleReferences,
   validateRoleProfileReferences,
   validateSkillReferences,
+  validateSupportedCompetencyIds,
 } from "./curriculum-integrity";
 import { LABS, PATHS, SKILLS } from "./content";
 import { COMPETENCIES, INCOSE_CROSSWALK, ROLE_PROFILES, type RoleProfile } from "./competencies";
@@ -679,7 +681,7 @@ export function upsertLessonDb(
       .get(input.moduleId, input.courseId) as { id: string; course_id: string } | undefined;
     if (!mod) return fail("Target module does not belong to course.", "not_found");
 
-    const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+    const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id).filter((id) => CANONICAL_COMPETENCY_IDS.has(id)));
     const referenceErrors = validateSkillReferences(knownCompetencyIds, [
       { source: "Lesson " + input.courseId + "/" + input.slug, skillIds: input.skillIds },
     ]);
@@ -807,6 +809,11 @@ export function upsertCompetencyDb(
   input: CompetencyUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicCompetencyRecord> {
+  // The Proceed Scale and learner-facing competency map currently define 16 canonical skills.
+  // A new ID requires a coordinated model/UI version update, not an isolated database row.
+  const supportedErrors = validateSupportedCompetencyIds([input.id]);
+  if (supportedErrors.length > 0) return fail(supportedErrors.join(" "), "validation_error");
+
   // Validate prerequisite DAG stays acyclic before mutating
   const existing = listCompetenciesDb(db);
   const referenceErrors = validateCompetencyGraphReferences(existing, [input]);
@@ -887,6 +894,12 @@ export function deleteCompetencyDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<{ deleted: boolean }> {
   try {
+    if (CANONICAL_COMPETENCY_IDS.has(id)) {
+      return fail(
+        "Core competency " + id + " cannot be deleted; the learner model and scoring UI depend on the canonical 16-skill catalogue.",
+        "conflict",
+      );
+    }
     const inventory = {
       competencies: listCompetenciesDb(db),
       courses: listCoursesDb({ includeDrafts: true, db }),
@@ -1283,7 +1296,7 @@ export function importCourseBundleDb(
   scenarioCount: number;
 }> {
   const existing = listCompetenciesDb(db);
-  const integrityErrors = validateCourseBundleReferences(bundle, existing);
+  const integrityErrors = validateCourseBundleReferences(bundle, existing, CANONICAL_COMPETENCY_IDS);
   if (integrityErrors.length > 0) {
     return fail(integrityErrors.join(" "), "validation_error");
   }
