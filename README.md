@@ -28,7 +28,7 @@ Open `http://localhost:3000`.
 | `npm run lint` | Run ESLint across the codebase |
 | `npm run validate:pack` | Verify canonical `content/pack/` URLs, citation integrity, audit breakdown, and mirror parity |
 | `npm run generate:sources` | Regenerate `src/lib/neet/sourceEnrichment.ts` from canonical `content/pack/` |
-| `npm run seed:sqlite` | Rebuild local `data/neet.db` from `content/pack/` |
+| `npm run seed:sqlite` | Rebuild local `.data/system_design.sqlite` from `content/pack/` (default path; override with server-only `SQLITE_DB_PATH`) |
 
 ## Architecture & Governance Docs
 
