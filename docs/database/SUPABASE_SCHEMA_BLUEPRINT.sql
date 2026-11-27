@@ -265,8 +265,193 @@ create table if not exists public.curriculum_labs (
 );
 
 create table if not exists public.curriculum_scenarios (
+  id text primary key check (id ~ '^[a-z0-9]+(-[a-z0-9]+)*
+  title text not null,
+  domain_context text not null,
+  situation text not null,
+  constraints_json jsonb not null default '[]'::jsonb,
+  question text not null,
+  options_json jsonb not null default '[]'::jsonb,
+  invalidation_prompt text not null,
+  status text not null default 'published' check (status in ('draft', 'published', 'archived')),
+  sort_order integer not null default 100,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.curriculum_capstones (
   id text primary key check (id ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-  skill_id text not null,
+  version text not null default '2.0.0',
+  title text not null,
+  summary text not null,
+  disclaimer text not null,
+  change_impact_json jsonb not null,
+  milestones_json jsonb not null,
+  status text not null default 'published' check (status in ('draft', 'published', 'archived')),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.curriculum_role_profiles (
+  id text primary key check (id ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  title text not null,
+  status text not null default 'provisional' check (status = 'provisional'),
+  disclaimer text not null,
+  summary text not null,
+  required_levels_json jsonb not null default '{}'::jsonb,
+  sort_order integer not null default 100,
+  updated_at timestamptz not null default now()
+);
+
+-- Retrofit scalar skill foreign keys on existing Lovable-managed databases.
+-- Existing orphan rows cause an explicit exception; repair those rows before retrying.
+do $$
+begin
+  if exists (select 1 from public.curriculum_labs l left join public.curriculum_competencies c on c.id = l.skill_id where c.id is null) then
+    raise exception 'Cannot add curriculum_labs skill foreign key: orphaned skill_id values exist.';
+  end if;
+  if exists (select 1 from public.curriculum_scenarios s left join public.curriculum_competencies c on c.id = s.skill_id where c.id is null) then
+    raise exception 'Cannot add curriculum_scenarios skill foreign key: orphaned skill_id values exist.';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'curriculum_labs_skill_id_fkey' and conrelid = 'public.curriculum_labs'::regclass) then
+    alter table public.curriculum_labs add constraint curriculum_labs_skill_id_fkey foreign key (skill_id) references public.curriculum_competencies(id) on delete restrict;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'curriculum_scenarios_skill_id_fkey' and conrelid = 'public.curriculum_scenarios'::regclass) then
+    alter table public.curriculum_scenarios add constraint curriculum_scenarios_skill_id_fkey foreign key (skill_id) references public.curriculum_competencies(id) on delete restrict;
+  end if;
+end
+$$;
+
+create or replace function public.prevent_referenced_competency_delete()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.curriculum_competencies c where c.id <> old.id and (c.prerequisites_json ? old.id or c.relations_json @> jsonb_build_array(jsonb_build_object('targetId', old.id)))) then
+    raise exception 'Competency % is referenced by another competency.', old.id using errcode = '23503';
+  end if;
+  if exists (select 1 from public.course_lessons l where l.skill_ids_json ? old.id) then
+    raise exception 'Competency % is referenced by a course lesson.', old.id using errcode = '23503';
+  end if;
+  if exists (select 1 from public.curriculum_capstones c cross join lateral jsonb_array_elements(c.milestones_json) milestone where (milestone -> 'skillIds') ? old.id) then
+    raise exception 'Competency % is referenced by a capstone milestone.', old.id using errcode = '23503';
+  end if;
+  if exists (select 1 from public.curriculum_role_profiles r where r.required_levels_json ? old.id) then
+    raise exception 'Competency % is referenced by a role profile.', old.id using errcode = '23503';
+  end if;
+  return old;
+end
+$$;
+
+drop trigger if exists curriculum_competency_prevent_referenced_delete on public.curriculum_competencies;
+create trigger curriculum_competency_prevent_referenced_delete before delete on public.curriculum_competencies
+for each row execute function public.prevent_referenced_competency_delete();
+
+-- Enable RLS across all dynamic curriculum tables
+alter table public.courses enable row level security;
+alter table public.course_modules enable row level security;
+alter table public.course_lessons enable row level security;
+alter table public.curriculum_competencies enable row level security;
+alter table public.curriculum_labs enable row level security;
+alter table public.curriculum_scenarios enable row level security;
+alter table public.curriculum_capstones enable row level security;
+alter table public.curriculum_role_profiles enable row level security;
+
+-- Public read of published content; authors/admins can read drafts & mutate
+drop policy if exists "courses_public_read_published" on public.courses;
+create policy "courses_public_read_published"
+  on public.courses for select to anon, authenticated
+  using (status = 'published' or public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "courses_author_write" on public.courses;
+create policy "courses_author_write"
+  on public.courses for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "course_modules_public_read" on public.course_modules;
+create policy "course_modules_public_read"
+  on public.course_modules for select to anon, authenticated
+  using (
+    exists (
+      select 1 from public.courses c
+      where c.id = course_modules.course_id
+        and (c.status = 'published' or public.current_app_role() in ('author', 'admin'))
+    )
+  );
+
+drop policy if exists "course_modules_author_write" on public.course_modules;
+create policy "course_modules_author_write"
+  on public.course_modules for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "course_lessons_public_read" on public.course_lessons;
+create policy "course_lessons_public_read"
+  on public.course_lessons for select to anon, authenticated
+  using (status = 'published' or public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "course_lessons_author_write" on public.course_lessons;
+create policy "course_lessons_author_write"
+  on public.course_lessons for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_competencies_read" on public.curriculum_competencies;
+create policy "curriculum_competencies_read"
+  on public.curriculum_competencies for select to anon, authenticated
+  using (true);
+
+drop policy if exists "curriculum_competencies_author_write" on public.curriculum_competencies;
+create policy "curriculum_competencies_author_write"
+  on public.curriculum_competencies for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_labs_read" on public.curriculum_labs;
+create policy "curriculum_labs_read"
+  on public.curriculum_labs for select to anon, authenticated
+  using (status = 'published' or public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_labs_author_write" on public.curriculum_labs;
+create policy "curriculum_labs_author_write"
+  on public.curriculum_labs for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_scenarios_read" on public.curriculum_scenarios;
+create policy "curriculum_scenarios_read"
+  on public.curriculum_scenarios for select to anon, authenticated
+  using (status = 'published' or public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_scenarios_author_write" on public.curriculum_scenarios;
+create policy "curriculum_scenarios_author_write"
+  on public.curriculum_scenarios for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_capstones_read" on public.curriculum_capstones;
+create policy "curriculum_capstones_read"
+  on public.curriculum_capstones for select to anon, authenticated
+  using (status = 'published' or public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_capstones_author_write" on public.curriculum_capstones;
+create policy "curriculum_capstones_author_write"
+  on public.curriculum_capstones for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+
+drop policy if exists "curriculum_role_profiles_read" on public.curriculum_role_profiles;
+create policy "curriculum_role_profiles_read"
+  on public.curriculum_role_profiles for select to anon, authenticated
+  using (true);
+
+drop policy if exists "curriculum_role_profiles_author_write" on public.curriculum_role_profiles;
+create policy "curriculum_role_profiles_author_write"
+  on public.curriculum_role_profiles for all to authenticated
+  using (public.current_app_role() in ('author', 'admin'))
+  with check (public.current_app_role() in ('author', 'admin'));
+),
+  skill_id text not null references public.curriculum_competencies(id) on delete restrict,
   title text not null,
   domain_context text not null,
   situation text not null,
