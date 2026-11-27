@@ -607,6 +607,38 @@ export function initTablesSync(db: DatabaseSync): void {
       sort_order INTEGER NOT NULL DEFAULT 100,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Keep reference integrity enforced even for existing SQLite files whose
+    -- CREATE TABLE statements cannot retrofit the new scalar foreign keys.
+    CREATE TRIGGER IF NOT EXISTS curriculum_competency_prevent_referenced_delete
+    BEFORE DELETE ON curriculum_competencies
+    WHEN
+      EXISTS (
+        SELECT 1 FROM curriculum_competencies c, json_each(c.prerequisites_json) p
+        WHERE c.id <> OLD.id AND p.value = OLD.id
+      )
+      OR EXISTS (
+        SELECT 1 FROM curriculum_competencies c, json_each(c.relations_json) r
+        WHERE c.id <> OLD.id AND json_extract(r.value, '$.targetId') = OLD.id
+      )
+      OR EXISTS (
+        SELECT 1 FROM course_lessons l, json_each(l.skill_ids_json) s
+        WHERE s.value = OLD.id
+      )
+      OR EXISTS (SELECT 1 FROM curriculum_labs l WHERE l.skill_id = OLD.id)
+      OR EXISTS (SELECT 1 FROM curriculum_scenarios s WHERE s.skill_id = OLD.id)
+      OR EXISTS (
+        SELECT 1
+        FROM curriculum_capstones c, json_each(c.milestones_json) m, json_each(json_extract(m.value, '$.skillIds')) s
+        WHERE s.value = OLD.id
+      )
+      OR EXISTS (
+        SELECT 1 FROM curriculum_role_profiles r, json_each(r.required_levels_json) levels
+        WHERE levels.key = OLD.id
+      )
+    BEGIN
+      SELECT RAISE(ABORT, 'Competency is still referenced by curriculum content.');
+    END;
   `);
 
   // Safe idempotent column additions for pre-existing local SQLite database files
