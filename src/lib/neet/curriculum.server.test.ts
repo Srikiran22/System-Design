@@ -298,17 +298,20 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(badScenario.success).toBe(false);
   });
 
-  it("rejects unknown competency edges and blocks deletion of a referenced competency", () => {
+  it("rejects unknown competency edges and keeps the canonical 16-skill model immutable", () => {
     const db = createTestDb();
-    const bad = upsertCompetencyDb(makeValidCompetency("bad-edge", ["missing-skill"]), db);
-    expect(bad.errorCode).toBe("validation_error");
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((competency) => competency.id === "sd-reliability")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
 
-    expect(upsertCompetencyDb(makeValidCompetency("comp-parent"), db).error).toBeNull();
-    expect(upsertCompetencyDb(makeValidCompetency("comp-child", ["comp-parent"]), db).error).toBeNull();
-    const deletion = deleteCompetencyDb("comp-parent", db);
+    const badPrerequisite = upsertCompetencyDb(makeValidCompetency("sd-reliability", ["missing-skill"]), db);
+    expect(badPrerequisite.errorCode).toBe("validation_error");
+
+    const unsupported = upsertCompetencyDb(makeValidCompetency("sd-observability-slo"), db);
+    expect(unsupported.errorCode).toBe("validation_error");
+
+    const deletion = deleteCompetencyDb("sd-reliability", db);
     expect(deletion.errorCode).toBe("conflict");
-    expect(() => db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run("comp-parent"))
-      .toThrow(/Competency is still referenced/);
   });
 
   it("requires ordered Search, Know, Adapt, Proceed competency descriptors", () => {
@@ -344,7 +347,7 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(imported.data?.courseSlug).toBe("custom-distributed-observability");
     expect(imported.data?.moduleCount).toBe(1);
     expect(imported.data?.lessonCount).toBe(1);
-    expect(imported.data?.competencyCount).toBe(1);
+    expect(imported.data?.competencyCount).toBe(0);
     expect(imported.data?.labCount).toBe(1);
 
     const exported = exportCourseBundleDb("custom-distributed-observability", db);
