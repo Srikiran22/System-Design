@@ -8,7 +8,7 @@
 -- ============================================================================
 
 begin;
-select plan(10);
+select plan(12);
 
 -- Test fixture UUIDs
 do $$
@@ -112,9 +112,48 @@ select is(
   'author can read draft courses'
 );
 select lives_ok(
-  $$insert into public.courses (id, slug, discipline, title, tagline, level, status, artifact)
-    values ('course-author-ok', 'author-ok', 'engineering', 'Author Course', 'Dynamic', 'Advanced', 'draft', 'ADR')$$,
+  $insert into public.courses (id, slug, discipline, title, tagline, level, status, artifact)
+    values ('course-author-ok', 'author-ok', 'engineering', 'Author Course', 'Dynamic', 'Advanced', 'draft', 'ADR')$,
   'author can create new dynamic courses'
+);
+
+-- 9. JSON-backed lesson competency links prevent deleting a referenced competency
+insert into public.curriculum_competencies
+  (id, code, domain, title, blurb, definition, bloom_target, level_descriptors_json)
+values
+  ('ref-check', 'SE-REF-01', 'design', 'Reference Check', 'Reference test', 'A test competency for referential integrity.', 'analyze', '[]'::jsonb);
+
+insert into public.course_modules (id, course_id, slug, title, summary, sort_order)
+values ('module-ref', 'course-author-ok', 'reference-module', 'Reference Module', 'Module for FK test', 10);
+
+insert into public.course_lessons
+  (id, module_id, course_id, slug, title, summary, minutes, skill_ids_json, blocks_json, status, sort_order)
+values
+  ('lesson-ref', 'module-ref', 'course-author-ok', 'reference-lesson', 'Reference Lesson', 'Lesson references competency', 10, '["ref-check"]'::jsonb, '[]'::jsonb, 'draft', 10);
+
+select throws_ok(
+  $delete from public.curriculum_competencies where id = 'ref-check'$,
+  '23503',
+  'Competency ref-check is referenced by a course lesson.',
+  'author cannot delete competency used by a lesson'
+);
+
+-- 10. Scalar lab competency links are protected by a real PostgreSQL foreign key
+insert into public.curriculum_competencies
+  (id, code, domain, title, blurb, definition, bloom_target, level_descriptors_json)
+values
+  ('lab-ref', 'SE-REF-02', 'design', 'Lab Reference', 'Reference test', 'A competency referenced by a lab.', 'analyze', '[]'::jsonb);
+
+insert into public.curriculum_labs
+  (id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order)
+values
+  ('lab-ref-test', 'design', 'lab-ref', 'Lab FK Test', 'A lab for FK verification.', 10, '[]'::jsonb, 'A constraint change.', 'Test artifact.', 'lab', '{}'::jsonb, 'draft', 10);
+
+select throws_ok(
+  $delete from public.curriculum_competencies where id = 'lab-ref'$,
+  '23503',
+  null,
+  'author cannot delete competency used by a lab'
 );
 
 select * from finish();
