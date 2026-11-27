@@ -4,7 +4,7 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* VisageGlow Dark System Design Theme — Charcoal surfaces, sage mint accent, Doto display & Inter UI. */
+/* NEET theme: charcoal surfaces, mint accent, Doto headings, and Inter body text. */
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -72,9 +72,9 @@
   --brand: #b8e6b7;
   --accent: #b8e6b7;
   --accent-dim: rgba(184, 230, 183, 0.38);
-  --accent-magenta: #f21d76;
-  --accent-electric: #7bf967;
-  --ok: #7bf967;
+  --accent-magenta: #b8e6b7;
+  --accent-electric: #b8e6b7;
+  --ok: #b8e6b7;
   --warn: #f5b95b;
   --sage: rgba(184, 230, 183, 0.14);
   --ink: #b8e6b7;
