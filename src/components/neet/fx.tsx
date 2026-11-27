@@ -26,7 +26,7 @@ export function BlurText({
   );
 }
 
-/** Card with a subtle sage-mint hover spotlight matching VisageGlow surfaces. */
+/** Card with a subtle mint hover spotlight for the NEET dark theme. */
 export function SpotlightCard({
   children,
   className = "",
