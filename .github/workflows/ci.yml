@@ -40,4 +40,4 @@ jobs:
       - name: Application route smoke checks
         run: npm run smoke
       - name: Dependency vulnerability audit (high/critical)
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=high
