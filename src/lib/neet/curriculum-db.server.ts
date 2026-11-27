@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { getDatabase } from "./db.server";
+import {
+  findCompetencyReferences,
+  validateCompetencyGraphReferences,
+  validateCourseBundleReferences,
+  validateRoleProfileReferences,
+  validateSkillReferences,
+} from "./curriculum-integrity";
 import { LABS, PATHS, SKILLS } from "./content";
 import { COMPETENCIES, INCOSE_CROSSWALK, ROLE_PROFILES, type RoleProfile } from "./competencies";
 import { CAPSTONE_PROJECT, LAB_RUBRICS, SCENARIOS, type ScenarioChallenge } from "./rubrics";
@@ -672,6 +679,12 @@ export function upsertLessonDb(
       .get(input.moduleId, input.courseId) as { id: string; course_id: string } | undefined;
     if (!mod) return fail("Target module does not belong to course.", "not_found");
 
+    const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+    const referenceErrors = validateSkillReferences(knownCompetencyIds, [
+      { source: "Lesson " + input.courseId + "/" + input.slug, skillIds: input.skillIds },
+    ]);
+    if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
+
     const now = new Date().toISOString();
     const existing = input.id
       ? (db.prepare("SELECT id FROM course_lessons WHERE id = ?").get(input.id) as
@@ -796,6 +809,10 @@ export function upsertCompetencyDb(
 ): ApiResult<DynamicCompetencyRecord> {
   // Validate prerequisite DAG stays acyclic before mutating
   const existing = listCompetenciesDb(db);
+  const referenceErrors = validateCompetencyGraphReferences(existing, [input]);
+  if (referenceErrors.length > 0) {
+    return fail(referenceErrors.join(" "), "validation_error");
+  }
   const proposedNodes = [
     ...existing
       .filter((c) => c.id !== input.id)
@@ -870,6 +887,21 @@ export function deleteCompetencyDb(
   db: DatabaseSync = getDatabase(),
 ): ApiResult<{ deleted: boolean }> {
   try {
+    const inventory = {
+      competencies: listCompetenciesDb(db),
+      courses: listCoursesDb({ includeDrafts: true, db }),
+      labs: listLabsDb({ includeDrafts: true, db }),
+      scenarios: listScenariosDb({ includeDrafts: true, db }),
+      capstone: getActiveCapstoneDb({ includeDrafts: true, db }),
+      roleProfiles: listRoleProfilesDb(db),
+    };
+    const references = findCompetencyReferences(id, inventory);
+    if (references.length > 0) {
+      return fail(
+        "Cannot delete competency " + id + "; it is still referenced by: " + references.join(", ") + ".",
+        "conflict",
+      );
+    }
     const res = db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run(id);
     if (res.changes === 0) return fail("Competency not found.", "not_found");
     return ok({ deleted: true });
@@ -917,6 +949,11 @@ export function upsertLabDb(
   input: LabUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicLabRecord> {
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const referenceErrors = validateSkillReferences(knownCompetencyIds, [
+    { source: "Lab " + input.id, skillIds: [input.skillId] },
+  ]);
+  if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
   try {
     const now = new Date().toISOString();
     db.prepare(
@@ -1009,6 +1046,11 @@ export function upsertScenarioDb(
   input: ScenarioUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<ScenarioChallenge> {
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const referenceErrors = validateSkillReferences(knownCompetencyIds, [
+    { source: "Scenario " + input.id, skillIds: [input.skillId] },
+  ]);
+  if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
   try {
     const now = new Date().toISOString();
     db.prepare(
@@ -1101,6 +1143,15 @@ export function upsertCapstoneDb(
   input: CapstoneUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<DynamicCapstoneRecord> {
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const referenceErrors = validateSkillReferences(
+    knownCompetencyIds,
+    input.milestones.map((milestone) => ({
+      source: "Capstone milestone " + milestone.id,
+      skillIds: milestone.skillIds,
+    })),
+  );
+  if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
   try {
     const now = new Date().toISOString();
     db.prepare(
@@ -1159,6 +1210,13 @@ export function upsertRoleProfileDb(
   input: RoleProfileUpsertInput,
   db: DatabaseSync = getDatabase(),
 ): ApiResult<RoleProfile> {
+  const knownCompetencyIds = new Set(listCompetenciesDb(db).map((competency) => competency.id));
+  const referenceErrors = validateRoleProfileReferences(
+    knownCompetencyIds,
+    input.requiredLevels,
+    "Role profile " + input.id,
+  );
+  if (referenceErrors.length > 0) return fail(referenceErrors.join(" "), "validation_error");
   try {
     const now = new Date().toISOString();
     db.prepare(
@@ -1224,8 +1282,12 @@ export function importCourseBundleDb(
   labCount: number;
   scenarioCount: number;
 }> {
+  const existing = listCompetenciesDb(db);
+  const integrityErrors = validateCourseBundleReferences(bundle, existing);
+  if (integrityErrors.length > 0) {
+    return fail(integrityErrors.join(" "), "validation_error");
+  }
   if (bundle.competencies && bundle.competencies.length > 0) {
-    const existing = listCompetenciesDb(db);
     const incomingIds = new Set(bundle.competencies.map((c) => c.id));
     const combined = [
       ...existing
