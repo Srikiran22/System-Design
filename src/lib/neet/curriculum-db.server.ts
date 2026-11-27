@@ -9,7 +9,6 @@ import {
   validateCourseBundleReferences,
   validateRoleProfileReferences,
   validateSkillReferences,
-  validateSupportedCompetencyIds,
 } from "./curriculum-integrity";
 import { LABS, PATHS, SKILLS } from "./content";
 import { COMPETENCIES, INCOSE_CROSSWALK, ROLE_PROFILES, type RoleProfile } from "./competencies";
