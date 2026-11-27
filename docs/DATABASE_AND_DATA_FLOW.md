@@ -23,7 +23,7 @@
 
 ## 3. Recommended Lovable Cloud Schema Migration (Apply via Lovable Editor)
 
-Per repository guardrails (`AGENTS.md`), `drizzle/` and `supabase/migrations/` are managed via Lovable and were not edited directly. To enable full cross-device persistence of rubric-evaluated evidence and snapshots in Supabase Cloud (currently persisted in local dev SQLite and bundled in JSON exports), apply the following tables via Lovable Cloud with owner-only RLS (`auth.uid() = user_id`):
+Per repository guardrails (`AGENTS.md`), `drizzle/` and `supabase/migrations/` are managed via Lovable and must not be edited directly in this repository. The application already targets `learner_evidence` and `learner_state_snapshots` in its production account functions; those tables and their owner-only RLS policies are deployment prerequisites. Use the following SQL as the schema reference when requesting the change through Lovable Cloud, then verify the actual deployed schema and policies in staging before treating cross-device evidence/snapshot persistence as production-ready:
 
 ```sql
 CREATE TABLE public.learner_evidence (
