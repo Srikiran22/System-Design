@@ -22,7 +22,8 @@ import {
   upsertLessonDb,
   upsertModuleDb,
 } from "./curriculum-db.server";
-import { competencyUpsertSchema, courseBundleSchema, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import { competencyUpsertSchema, courseBundleSchema, detectCompetencyCycles, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import { validateCompetencyGraphReferences } from "./curriculum-integrity";
 
 function createTestDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -165,8 +166,9 @@ describe("dynamic database-backed curriculum engine", () => {
     );
     expect(missingSkillLesson.errorCode).toBe("validation_error");
 
-    const competency = upsertCompetencyDb(makeValidCompetency("st-stocks"), db);
-    expect(competency.error).toBeNull();
+    delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
+    expect(listCompetenciesDb(db).some((competency) => competency.id === "st-stocks")).toBe(true);
+    process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
 
     const les = upsertLessonDb(
       {
@@ -221,15 +223,19 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(getCourseBySlugDb("custom-systems-101", { includeDrafts: true, db })).toBeNull();
   });
 
-  it("rejects circular competency prerequisite graphs (DAG invariant)", () => {
-    const db = createTestDb();
-    expect(upsertCompetencyDb(makeValidCompetency("comp-a", []), db).error).toBeNull();
-    expect(upsertCompetencyDb(makeValidCompetency("comp-b", ["comp-a"]), db).error).toBeNull();
+  it("detects circular prerequisite graphs and dangling references", () => {
+    const cycles = detectCompetencyCycles([
+      { id: "comp-a", prerequisites: ["comp-b"] },
+      { id: "comp-b", prerequisites: ["comp-a"] },
+    ]);
+    expect(cycles).toHaveLength(1);
 
-    // Attempting to make comp-a depend on comp-b creates a cycle comp-a -> comp-b -> comp-a
-    const cyclic = upsertCompetencyDb(makeValidCompetency("comp-a", ["comp-b"]), db);
-    expect(cyclic.data).toBeNull();
-    expect(cyclic.errorCode).toBe("cycle_detected");
+    const dangling = validateCompetencyGraphReferences(
+      [{ id: "sd-reliability", prerequisites: [] }],
+      [{ id: "sd-reliability", prerequisites: ["missing-skill"] }],
+    );
+    expect(dangling).toHaveLength(1);
+    expect(dangling[0]).toContain("unknown prerequisite");
   });
 
   it("rejects lab rubrics whose criterion weights do not sum to 1.0 and scenarios without an optimal option", () => {
@@ -318,9 +324,6 @@ describe("dynamic database-backed curriculum engine", () => {
     delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
     expect(listCompetenciesDb(db).some((competency) => competency.id === "sd-reliability")).toBe(true);
     process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
-
-    const badPrerequisite = upsertCompetencyDb(makeValidCompetency("sd-reliability", ["missing-skill"]), db);
-    expect(badPrerequisite.errorCode).toBe("validation_error");
 
     const unsupported = upsertCompetencyDb(makeValidCompetency("sd-observability-slo"), db);
     expect(unsupported.errorCode).toBe("validation_error");
