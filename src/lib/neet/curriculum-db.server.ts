@@ -682,10 +682,10 @@ export function upsertLessonDb(
     if (!mod) return fail("Target module does not belong to course.", "not_found");
 
     const knownCompetencyIds = new Set(
-    listCompetenciesDb(db)
-      .map((competency) => competency.id)
-      .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
-  );
+      listCompetenciesDb(db)
+        .map((competency) => competency.id)
+        .filter((id) => CANONICAL_COMPETENCY_IDS.has(id)),
+    );
     const referenceErrors = validateSkillReferences(knownCompetencyIds, [
       { source: "Lesson " + input.courseId + "/" + input.slug, skillIds: input.skillIds },
     ]);
