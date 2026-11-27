@@ -23,8 +23,13 @@ export function validateSupportedCompetencyIds(
 ): string[] {
   return competencyIds
     .filter((id) => !supportedIds.has(id))
-    .map((id) =>
-      source + ' "' + id + '" is outside the current canonical 16-competency learning model. Map the content to an existing competency or version the learner model and UI together.',
+    .map(
+      (id) =>
+        source +
+        ' "' +
+        id +
+        '" is outside the current canonical 16-competency learning model. ' +
+        "Map the content to an existing competency or version the learner model and UI together.",
     );
 }
 
@@ -49,9 +54,7 @@ function stableJson(value: unknown): string {
  * 16-item catalogue. CMS writes may materialize that catalogue, but may not
  * silently redefine it in the database.
  */
-export function validateCanonicalCompetencyDefinition(
-  input: CompetencyUpsertInput,
-): string[] {
+export function validateCanonicalCompetencyDefinition(input: CompetencyUpsertInput): string[] {
   const expected = COMPETENCIES.find((competency) => competency.id === input.id);
   const skill = SKILLS.find((item) => item.id === input.id);
   if (!expected || !skill) {
@@ -68,8 +71,16 @@ export function validateCanonicalCompetencyDefinition(
     { name: "Bloom target", actual: input.bloomTarget, expected: expected.bloomTarget },
     { name: "prerequisites", actual: input.prerequisites, expected: expected.prerequisites },
     { name: "relations", actual: input.relations, expected: expected.relations },
-    { name: "framework anchors", actual: input.frameworkAnchors, expected: expected.frameworkAnchors },
-    { name: "level descriptors", actual: input.levelDescriptors, expected: expected.levelDescriptors },
+    {
+      name: "framework anchors",
+      actual: input.frameworkAnchors,
+      expected: expected.frameworkAnchors,
+    },
+    {
+      name: "level descriptors",
+      actual: input.levelDescriptors,
+      expected: expected.levelDescriptors,
+    },
     { name: "mapped volumes", actual: input.mappedVolumes, expected: expected.mappedVolumes },
     { name: "role tags", actual: input.roleTags, expected: expected.roleTags },
     { name: "version", actual: input.version, expected: expected.version },
@@ -129,9 +140,7 @@ export function validateCompetencyGraphReferences(
   for (const node of merged.values()) {
     for (const prerequisite of node.prerequisites) {
       if (!knownIds.has(prerequisite)) {
-        errors.push(
-          `Competency "${node.id}" references unknown prerequisite "${prerequisite}".`,
-        );
+        errors.push(`Competency "${node.id}" references unknown prerequisite "${prerequisite}".`);
       }
     }
     for (const relation of node.relations ?? []) {
@@ -186,7 +195,12 @@ export function validateCourseBundleReferences(
 ): string[] {
   const incomingCompetencies = bundle.competencies ?? [];
   const errors = validateCompetencyGraphReferences(existingCompetencies, incomingCompetencies);
-  errors.push(...validateSupportedCompetencyIds(incomingCompetencies.map((c) => c.id), supportedIds));
+  errors.push(
+    ...validateSupportedCompetencyIds(
+      incomingCompetencies.map((competency) => competency.id),
+      supportedIds,
+    ),
+  );
   for (const competency of incomingCompetencies) {
     errors.push(...validateCanonicalCompetencyDefinition(competency));
   }

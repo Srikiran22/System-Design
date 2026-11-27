@@ -22,7 +22,14 @@ import {
   upsertLessonDb,
   upsertModuleDb,
 } from "./curriculum-db.server";
-import { competencyUpsertSchema, courseBundleSchema, detectCompetencyCycles, labUpsertSchema, scenarioUpsertSchema } from "./curriculum-schemas";
+import {
+  competencyUpsertSchema,
+  courseBundleSchema,
+  detectCompetencyCycles,
+  labUpsertSchema,
+  lessonUpsertSchema,
+  scenarioUpsertSchema,
+} from "./curriculum-schemas";
 import { validateCompetencyGraphReferences } from "./curriculum-integrity";
 
 function createTestDb(): DatabaseSync {
@@ -194,14 +201,44 @@ describe("dynamic database-backed curriculum engine", () => {
 
     // Storage-level checks protect existing rows even when a caller bypasses the service layer.
     expect(() =>
-      db.prepare(
-        "INSERT INTO curriculum_labs (id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).run("lab-orphan", "design", "missing-skill", "Orphan Lab", "Invalid skill reference.", 10, "[]", "Constraint twist.", "Artifact", "lab", "{}", "draft", 1),
+      db
+        .prepare(
+          "INSERT INTO curriculum_labs (id, discipline, skill_id, title, brief, minutes, steps_json, twist, artifact, evidence_type, rubric_json, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "lab-orphan",
+          "design",
+          "missing-skill",
+          "Orphan Lab",
+          "Invalid skill reference.",
+          10,
+          "[]",
+          "Constraint twist.",
+          "Artifact",
+          "lab",
+          "{}",
+          "draft",
+          1,
+        ),
     ).toThrow(/unknown canonical competency/);
     expect(() =>
-      db.prepare(
-        "INSERT INTO curriculum_scenarios (id, skill_id, title, domain_context, situation, constraints_json, question, options_json, invalidation_prompt, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).run("scenario-orphan", "missing-skill", "Orphan Scenario", "Test", "Invalid reference.", "[]", "Question?", "[]", "What invalidates it?", "draft", 1),
+      db
+        .prepare(
+          "INSERT INTO curriculum_scenarios (id, skill_id, title, domain_context, situation, constraints_json, question, options_json, invalidation_prompt, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "scenario-orphan",
+          "missing-skill",
+          "Orphan Scenario",
+          "Test",
+          "Invalid reference.",
+          "[]",
+          "Question?",
+          "[]",
+          "What invalidates it?",
+          "draft",
+          1,
+        ),
     ).toThrow(/unknown canonical competency/);
     expect(() =>
       db.prepare("DELETE FROM curriculum_competencies WHERE id = ?").run("st-stocks"),
@@ -223,6 +260,57 @@ describe("dynamic database-backed curriculum engine", () => {
     expect(getCourseBySlugDb("custom-systems-101", { includeDrafts: true, db })).toBeNull();
   });
 
+  it("keeps pause checks mapped to lesson skills and pause IDs unique across a course", () => {
+    const invalidLesson = lessonUpsertSchema.safeParse({
+      courseId: "test-course",
+      moduleId: "test-module",
+      slug: "invalid-pause-map",
+      title: "Invalid Pause Mapping",
+      summary: "The pause check references an undeclared skill.",
+      minutes: 10,
+      skillIds: ["sd-reliability"],
+      blocks: [
+        {
+          t: "pause",
+          id: "pause-missing-skill",
+          skillId: "missing-skill",
+          q: "Which choice is correct?",
+          options: ["A", "B"],
+          answer: 0,
+          why: "The explanation is supplied.",
+        },
+      ],
+      keep: [],
+      status: "draft",
+      sortOrder: 1,
+    });
+    expect(invalidLesson.success).toBe(false);
+
+    const templatePath = path.resolve(process.cwd(), "docs/curriculum/COURSE_BUNDLE_TEMPLATE.json");
+    const bundle = JSON.parse(fs.readFileSync(templatePath, "utf-8"));
+    const existingLesson = bundle.modules[0].lessons[0];
+    const invalidBundlePause = JSON.parse(JSON.stringify(bundle));
+    invalidBundlePause.modules[0].lessons[0].skillIds = ["sd-reliability"];
+    invalidBundlePause.modules[0].lessons[0].blocks = [
+      {
+        t: "pause",
+        id: "pause-missing-skill",
+        skillId: "missing-skill",
+        q: "Which choice is correct?",
+        options: ["A", "B"],
+        answer: 0,
+        why: "The explanation is supplied.",
+      },
+    ];
+    expect(courseBundleSchema.safeParse(invalidBundlePause).success).toBe(false);
+
+    bundle.modules[0].lessons.push({
+      ...existingLesson,
+      slug: "second-lesson",
+      title: "Second Lesson",
+    });
+    expect(courseBundleSchema.safeParse(bundle).success).toBe(false);
+  });
   it("detects circular prerequisite graphs and dangling references", () => {
     const cycles = detectCompetencyCycles([
       { id: "comp-a", prerequisites: ["comp-b"] },
@@ -322,7 +410,9 @@ describe("dynamic database-backed curriculum engine", () => {
   it("rejects unknown competency edges and keeps the canonical 16-skill model immutable", () => {
     const db = createTestDb();
     delete process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"];
-    expect(listCompetenciesDb(db).some((competency) => competency.id === "sd-reliability")).toBe(true);
+    expect(listCompetenciesDb(db).some((competency) => competency.id === "sd-reliability")).toBe(
+      true,
+    );
     process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] = "1";
 
     const unsupported = upsertCompetencyDb(makeValidCompetency("sd-observability-slo"), db);
@@ -334,9 +424,18 @@ describe("dynamic database-backed curriculum engine", () => {
 
   it("requires ordered Search, Know, Adapt, Proceed competency descriptors", () => {
     const valid = makeValidCompetency("bad-stage-order");
-    const swapped = { ...valid, levelDescriptors: [valid.levelDescriptors[1], valid.levelDescriptors[0], valid.levelDescriptors[2], valid.levelDescriptors[3]] };
+    const swapped = {
+      ...valid,
+      levelDescriptors: [
+        valid.levelDescriptors[1],
+        valid.levelDescriptors[0],
+        valid.levelDescriptors[2],
+        valid.levelDescriptors[3],
+      ],
+    };
     expect(competencyUpsertSchema.safeParse(swapped).success).toBe(false);
   });
+
   it("imports and round-trip exports the official COURSE_BUNDLE_TEMPLATE.json atomically", () => {
     const db = createTestDb();
     // The portable template references the starter sd-reliability competency.
@@ -354,10 +453,7 @@ describe("dynamic database-backed curriculum engine", () => {
     const rejectedBundle = importCourseBundleDb(danglingBundle, "author-template", db);
     expect(rejectedBundle.errorCode).toBe("validation_error");
 
-    const invalidLab = upsertLabDb(
-      { ...parsed.labs![0]!, skillId: "missing-skill" },
-      db,
-    );
+    const invalidLab = upsertLabDb({ ...parsed.labs![0]!, skillId: "missing-skill" }, db);
     expect(invalidLab.errorCode).toBe("validation_error");
 
     const imported = importCourseBundleDb(parsed, "author-template", db);

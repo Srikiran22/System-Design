@@ -138,7 +138,7 @@ export default function LessonActions({ pathSlug, lessonSlug, skillId, prev, nex
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => actions.toggleComplete(key)}
+          onClick={() => actions.toggleComplete(key, skillId)}
           aria-pressed={done}
           className={`rounded-md px-5 py-2.5 font-semibold ${done ? "border border-accent text-accent" : "bg-accent text-bg hover:brightness-110"}`}
         >

@@ -84,7 +84,12 @@ export const lessonBlockSchema: z.ZodType<Block> = z.discriminatedUnion("t", [
   z.object({
     t: z.literal("pause"),
     id: z.string().trim().min(1).max(120),
-    skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+    skillId: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
     q: z.string().trim().min(5).max(1000),
     options: z.array(z.string().trim().min(1).max(500)).min(2).max(6),
     answer: z.number().int().min(0).max(5),
@@ -122,7 +127,7 @@ export const moduleUpsertSchema = z.object({
 });
 export type ModuleUpsertInput = z.infer<typeof moduleUpsertSchema>;
 
-export const lessonUpsertSchema = z.object({
+const lessonUpsertFieldsSchema = z.object({
   id: z.string().trim().min(1).max(100).optional(),
   courseId: z.string().trim().min(1).max(100),
   moduleId: z.string().trim().min(1).max(100),
@@ -135,12 +140,47 @@ export const lessonUpsertSchema = z.object({
   title: z.string().trim().min(2).max(200),
   summary: z.string().trim().min(2).max(600),
   minutes: z.number().int().min(1).max(600),
-  skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
+  skillIds: z
+    .array(
+      z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+    )
+    .min(1)
+    .max(10),
   blocks: z.array(lessonBlockSchema).min(1).max(120),
   keep: z.array(z.string().trim().min(1).max(400)).max(12).default([]),
   status: publishStatusSchema.default("published"),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 });
+type LessonReferenceInput = Pick<z.infer<typeof lessonUpsertFieldsSchema>, "skillIds" | "blocks">;
+type LessonRefinementContext = Parameters<
+  Parameters<typeof lessonUpsertFieldsSchema.superRefine>[0]
+>[1];
+
+const validateLessonReferences = (lesson: LessonReferenceInput, ctx: LessonRefinementContext) => {
+  const skillIds = new Set(lesson.skillIds);
+  const seenSkillIds = new Set<string>();
+  lesson.skillIds.forEach((skillId, index) => {
+    if (seenSkillIds.has(skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skillIds", index],
+        message: "A lesson may map each competency only once.",
+      });
+    }
+    seenSkillIds.add(skillId);
+  });
+
+  lesson.blocks.forEach((block, index) => {
+    if (block.t === "pause" && !skillIds.has(block.skillId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blocks", index, "skillId"],
+        message: "Pause checks must map to a competency declared in the lesson skillIds.",
+      });
+    }
+  });
+};
+export const lessonUpsertSchema = lessonUpsertFieldsSchema.superRefine(validateLessonReferences);
 export type LessonUpsertInput = z.infer<typeof lessonUpsertSchema>;
 
 export const rubricCriterionSchema = z.object({
@@ -178,7 +218,12 @@ export const rubricDefinitionSchema: z.ZodType<RubricDefinition> = z
 export const labUpsertSchema = z.object({
   id: z.string().trim().min(2).max(120).regex(SLUG_RE, "Lab ID must be lowercase kebab-case"),
   discipline: disciplineSchema.default("design"),
-  skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+  skillId: z
+    .string()
+    .trim()
+    .min(2)
+    .max(100)
+    .regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
   title: z.string().trim().min(2).max(200),
   brief: z.string().trim().min(5).max(1000),
   minutes: z.number().int().min(5).max(600),
@@ -208,7 +253,12 @@ export const scenarioUpsertSchema = z
       .min(2)
       .max(120)
       .regex(SLUG_RE, "Scenario ID must be lowercase kebab-case"),
-    skillId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+    skillId: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
     title: z.string().trim().min(3).max(200),
     domainContext: z.string().trim().min(3).max(300),
     situation: z.string().trim().min(10).max(2000),
@@ -237,11 +287,26 @@ export const competencyUpsertSchema = z.object({
   blurb: z.string().trim().min(2).max(400),
   definition: z.string().trim().min(10).max(1200),
   bloomTarget: z.enum(["apply", "analyze", "evaluate", "create"]),
-  prerequisites: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Prerequisite IDs must be lowercase kebab-case")).max(12).default([]),
+  prerequisites: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(2)
+        .max(100)
+        .regex(SLUG_RE, "Prerequisite IDs must be lowercase kebab-case"),
+    )
+    .max(12)
+    .default([]),
   relations: z
     .array(
       z.object({
-        targetId: z.string().trim().min(2).max(100).regex(SLUG_RE, "Related competency IDs must be lowercase kebab-case"),
+        targetId: z
+          .string()
+          .trim()
+          .min(2)
+          .max(100)
+          .regex(SLUG_RE, "Related competency IDs must be lowercase kebab-case"),
         kind: z.enum(["assumes", "extends", "related"]),
       }),
     )
@@ -257,58 +322,60 @@ export const competencyUpsertSchema = z.object({
     )
     .max(10)
     .default([]),
-  levelDescriptors: z.tuple([
-    z.object({
-      level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-      stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
-      observableOutcome: z.string().trim().min(5).max(500),
-      requiredEvidence: z
-        .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
-        .min(1),
+  levelDescriptors: z
+    .tuple([
+      z.object({
+        level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
+        observableOutcome: z.string().trim().min(5).max(500),
+        requiredEvidence: z
+          .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
+          .min(1),
+      }),
+      z.object({
+        level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
+        observableOutcome: z.string().trim().min(5).max(500),
+        requiredEvidence: z
+          .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
+          .min(1),
+      }),
+      z.object({
+        level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
+        observableOutcome: z.string().trim().min(5).max(500),
+        requiredEvidence: z
+          .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
+          .min(1),
+      }),
+      z.object({
+        level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
+        observableOutcome: z.string().trim().min(5).max(500),
+        requiredEvidence: z
+          .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
+          .min(1),
+      }),
+    ])
+    .superRefine((descriptors, ctx) => {
+      const expectedStages = ["Search", "Know", "Adapt", "Proceed"] as const;
+      descriptors.forEach((descriptor, index) => {
+        if (descriptor.level !== index + 1) {
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "level"],
+            message: "Competency level descriptors must be ordered exactly 1, 2, 3, 4.",
+          });
+        }
+        if (descriptor.stage !== expectedStages[index]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "stage"],
+            message: "Level " + (index + 1) + " must use the matching progression stage.",
+          });
+        }
+      });
     }),
-    z.object({
-      level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-      stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
-      observableOutcome: z.string().trim().min(5).max(500),
-      requiredEvidence: z
-        .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
-        .min(1),
-    }),
-    z.object({
-      level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-      stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
-      observableOutcome: z.string().trim().min(5).max(500),
-      requiredEvidence: z
-        .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
-        .min(1),
-    }),
-    z.object({
-      level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-      stage: z.enum(["Search", "Know", "Adapt", "Proceed"]),
-      observableOutcome: z.string().trim().min(5).max(500),
-      requiredEvidence: z
-        .array(z.enum(["quiz", "explain", "variant", "lab", "artifact", "review"]))
-        .min(1),
-    }),
-  ]).superRefine((descriptors, ctx) => {
-    const expectedStages = ["Search", "Know", "Adapt", "Proceed"] as const;
-    descriptors.forEach((descriptor, index) => {
-      if (descriptor.level !== index + 1) {
-        ctx.addIssue({
-          code: "custom",
-          path: [index, "level"],
-          message: "Competency level descriptors must be ordered exactly 1, 2, 3, 4.",
-        });
-      }
-      if (descriptor.stage !== expectedStages[index]) {
-        ctx.addIssue({
-          code: "custom",
-          path: [index, "stage"],
-          message: "Level " + (index + 1) + " must use the matching progression stage.",
-        });
-      }
-    });
-  }),
   mappedVolumes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
   roleTags: z.array(z.string().trim().min(1).max(120)).max(15).default([]),
   version: z.string().trim().min(1).max(40).default("2.0.0"),
@@ -340,7 +407,12 @@ export const roleProfileUpsertSchema = z.object({
   disclaimer: z.string().trim().min(10).max(600),
   summary: z.string().trim().min(10).max(800),
   requiredLevels: z.record(
-    z.string().trim().min(2).max(100).regex(SLUG_RE, "Required competency IDs must be lowercase kebab-case"),
+    z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(SLUG_RE, "Required competency IDs must be lowercase kebab-case"),
     z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   ),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
@@ -372,7 +444,17 @@ export const capstoneUpsertSchema = z.object({
         traceStage: z.string().trim().min(2).max(120),
         designReviewGate: z.string().trim().min(2).max(160),
         upstreamMilestoneIds: z.array(z.string().trim().min(1).max(120)).max(10),
-        skillIds: z.array(z.string().trim().min(2).max(100).regex(SLUG_RE, "Skill IDs must be lowercase kebab-case")).min(1).max(10),
+        skillIds: z
+          .array(
+            z
+              .string()
+              .trim()
+              .min(2)
+              .max(100)
+              .regex(SLUG_RE, "Skill IDs must be lowercase kebab-case"),
+          )
+          .min(1)
+          .max(10),
         evidenceType: z.literal("artifact"),
         deliverables: z.array(z.string().trim().min(3).max(400)).min(1).max(12),
         traceabilityLink: z.string().trim().min(3).max(300),
@@ -386,77 +468,157 @@ export const capstoneUpsertSchema = z.object({
 export type CapstoneUpsertInput = z.infer<typeof capstoneUpsertSchema>;
 
 /** Complete portable course bundle schema for programmatic / CLI / CMS import & export. */
-export const courseBundleSchema = z.object({
-  schemaVersion: z.literal("1.0").default("1.0"),
-  course: courseUpsertSchema,
-  modules: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1).max(100).optional(),
-        slug: z
-          .string()
-          .trim()
-          .min(2)
-          .max(120)
-          .regex(SLUG_RE, "Module slug must be lowercase kebab-case"),
-        title: z.string().trim().min(2).max(200),
-        summary: z.string().trim().max(600).default(""),
-        sortOrder: z.number().int().min(0).max(10_000).optional(),
-        lessons: z
-          .array(lessonUpsertSchema.omit({ courseId: true, moduleId: true }))
-          .min(1)
-          .max(50),
-      }),
-    )
-    .min(1)
-    .max(30),
-  competencies: z.array(competencyUpsertSchema).max(50).optional(),
-  labs: z.array(labUpsertSchema).max(50).optional(),
-  scenarios: z.array(scenarioUpsertSchema).max(50).optional(),
-}).superRefine((bundle, ctx) => {
-  const checkUnique = (values: Array<{ value: string; path: (string | number)[] }>, label: string) => {
-    const seen = new Set<string>();
-    for (const item of values) {
-      if (seen.has(item.value)) {
-        ctx.addIssue({
-          code: "custom",
-          path: item.path,
-          message: "Duplicate " + label + " " + item.value + " in course bundle.",
+export const courseBundleSchema = z
+  .object({
+    schemaVersion: z.literal("1.0").default("1.0"),
+    course: courseUpsertSchema,
+    modules: z
+      .array(
+        z.object({
+          id: z.string().trim().min(1).max(100).optional(),
+          slug: z
+            .string()
+            .trim()
+            .min(2)
+            .max(120)
+            .regex(SLUG_RE, "Module slug must be lowercase kebab-case"),
+          title: z.string().trim().min(2).max(200),
+          summary: z.string().trim().max(600).default(""),
+          sortOrder: z.number().int().min(0).max(10_000).optional(),
+          lessons: z
+            .array(lessonUpsertFieldsSchema.omit({ courseId: true, moduleId: true }))
+            .min(1)
+            .max(50),
+        }),
+      )
+      .min(1)
+      .max(30),
+    competencies: z.array(competencyUpsertSchema).max(50).optional(),
+    labs: z.array(labUpsertSchema).max(50).optional(),
+    scenarios: z.array(scenarioUpsertSchema).max(50).optional(),
+  })
+  .superRefine((bundle, ctx) => {
+    bundle.modules.forEach((module, moduleIndex) => {
+      module.lessons.forEach((lesson, lessonIndex) => {
+        const skillIds = new Set<string>();
+        lesson.skillIds.forEach((skillId, skillIndex) => {
+          if (skillIds.has(skillId)) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["modules", moduleIndex, "lessons", lessonIndex, "skillIds", skillIndex],
+              message: "A lesson may map each competency only once.",
+            });
+          }
+          skillIds.add(skillId);
         });
+
+        lesson.blocks.forEach((block, blockIndex) => {
+          if (block.t === "pause" && !skillIds.has(block.skillId)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [
+                "modules",
+                moduleIndex,
+                "lessons",
+                lessonIndex,
+                "blocks",
+                blockIndex,
+                "skillId",
+              ],
+              message: "Pause checks must map to a competency declared in the lesson skillIds.",
+            });
+          }
+        });
+      });
+    });
+
+    const checkUnique = (
+      values: Array<{ value: string; path: (string | number)[] }>,
+      label: string,
+    ) => {
+      const seen = new Set<string>();
+      for (const item of values) {
+        if (seen.has(item.value)) {
+          ctx.addIssue({
+            code: "custom",
+            path: item.path,
+            message: "Duplicate " + label + " " + item.value + " in course bundle.",
+          });
+        }
+        seen.add(item.value);
       }
-      seen.add(item.value);
-    }
-  };
-  checkUnique(
-    bundle.modules.map((module, index) => ({ value: module.slug, path: ["modules", index, "slug"] })),
-    "module slug",
-  );
-  checkUnique(
-    bundle.modules.flatMap((module, moduleIndex) =>
-      module.lessons.map((lesson, lessonIndex) => ({
-        value: lesson.slug,
-        path: ["modules", moduleIndex, "lessons", lessonIndex, "slug"],
+    };
+
+    checkUnique(
+      bundle.modules.map((module, index) => ({
+        value: module.slug,
+        path: ["modules", index, "slug"],
       })),
-    ),
-    "lesson slug",
-  );
-  checkUnique(
-    bundle.competencies?.map((item, index) => ({ value: item.id, path: ["competencies", index, "id"] })) ?? [],
-    "competency ID",
-  );
-  checkUnique(
-    bundle.competencies?.map((item, index) => ({ value: item.code, path: ["competencies", index, "code"] })) ?? [],
-    "competency code",
-  );
-  checkUnique(
-    bundle.labs?.map((item, index) => ({ value: item.id, path: ["labs", index, "id"] })) ?? [],
-    "lab ID",
-  );
-  checkUnique(
-    bundle.scenarios?.map((item, index) => ({ value: item.id, path: ["scenarios", index, "id"] })) ?? [],
-    "scenario ID",
-  );
-});
+      "module slug",
+    );
+    checkUnique(
+      bundle.modules.flatMap((module, moduleIndex) =>
+        module.lessons.map((lesson, lessonIndex) => ({
+          value: lesson.slug,
+          path: ["modules", moduleIndex, "lessons", lessonIndex, "slug"],
+        })),
+      ),
+      "lesson slug",
+    );
+    checkUnique(
+      bundle.competencies?.map((item, index) => ({
+        value: item.id,
+        path: ["competencies", index, "id"],
+      })) ?? [],
+      "competency ID",
+    );
+    checkUnique(
+      bundle.competencies?.map((item, index) => ({
+        value: item.code,
+        path: ["competencies", index, "code"],
+      })) ?? [],
+      "competency code",
+    );
+    checkUnique(
+      bundle.labs?.map((item, index) => ({
+        value: item.id,
+        path: ["labs", index, "id"],
+      })) ?? [],
+      "lab ID",
+    );
+    checkUnique(
+      bundle.scenarios?.map((item, index) => ({
+        value: item.id,
+        path: ["scenarios", index, "id"],
+      })) ?? [],
+      "scenario ID",
+    );
+    checkUnique(
+      bundle.modules.flatMap((module, moduleIndex) =>
+        module.lessons.flatMap((lesson, lessonIndex) =>
+          lesson.blocks.flatMap((block, blockIndex) =>
+            block.t === "pause"
+              ? [
+                  {
+                    value: block.id,
+                    path: [
+                      "modules",
+                      moduleIndex,
+                      "lessons",
+                      lessonIndex,
+                      "blocks",
+                      blockIndex,
+                      "id",
+                    ],
+                  },
+                ]
+              : [],
+          ),
+        ),
+      ),
+      "pause-check ID",
+    );
+  });
 export type CourseBundleInput = z.infer<typeof courseBundleSchema>;
 
 export interface DynamicModuleRecord extends Module {
