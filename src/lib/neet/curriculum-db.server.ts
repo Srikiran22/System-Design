@@ -5,6 +5,7 @@ import {
   CANONICAL_COMPETENCY_IDS,
   findCompetencyReferences,
   validateCompetencyGraphReferences,
+  validateCanonicalCompetencyDefinition,
   validateCourseBundleReferences,
   validateRoleProfileReferences,
   validateSkillReferences,
@@ -811,7 +812,7 @@ export function upsertCompetencyDb(
 ): ApiResult<DynamicCompetencyRecord> {
   // The Proceed Scale and learner-facing competency map currently define 16 canonical skills.
   // A new ID requires a coordinated model/UI version update, not an isolated database row.
-  const supportedErrors = validateSupportedCompetencyIds([input.id]);
+  const supportedErrors = validateCanonicalCompetencyDefinition(input);
   if (supportedErrors.length > 0) return fail(supportedErrors.join(" "), "validation_error");
 
   // Validate prerequisite DAG stays acyclic before mutating
