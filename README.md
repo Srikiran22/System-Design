@@ -1,8 +1,8 @@
-# NEET — Systems Engineering Learning Platform
+# NEET
 
-> *"Help learners develop the judgment to design and engineer real-world systems well."*
 
-NEET is an evidence-based systems thinking, system design, and systems engineering learning platform combining a 16-competency INCOSE/SEBoK/ISO-anchored curriculum, a rubric-evaluated Practice Studio (10 labs, 4 worked trade-off scenarios, and a 6-milestone traceable Capstone), a 120-volume / 320-source canonical knowledge pack, and an account-synced Proceed Scale portfolio.
+
+NEET is an early-stage learning project focused on systems thinking, system design, and practical engineering. This repository contains course material, exercises, projects, and a source-backed knowledge pack.
 
 ## Tech Stack
 

@@ -7,15 +7,12 @@ export default function Footer() {
         <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           <div className="flex items-center gap-3">
             <span className="flex h-7 w-7 items-center justify-center rounded bg-accent font-display text-xs font-bold text-bg">
-              S
+              N
             </span>
             <div>
               <span className="font-display text-sm font-bold tracking-tight text-text">
-                From Scratch
+                NEET
               </span>
-              <p className="text-xs text-muted">
-                Built for engineers who want to ship real systems. Not just tutorials.
-              </p>
             </div>
           </div>
 
@@ -24,7 +21,7 @@ export default function Footer() {
             className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted"
           >
             <Link href="/paths" className="transition-colors hover:text-accent">
-              Paths
+              Courses
             </Link>
             <Link href="/library" className="transition-colors hover:text-accent">
               Library
@@ -45,7 +42,7 @@ export default function Footer() {
               Calibration
             </Link>
             <Link href="/health" className="transition-colors hover:text-accent">
-              System Health
+              Status
             </Link>
           </nav>
         </div>

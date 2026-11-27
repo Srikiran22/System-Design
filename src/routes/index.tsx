@@ -19,17 +19,17 @@ export const Route = createFileRoute("/")({
   loader: async () => listCourses({ data: {} }),
   head: () => ({
     meta: [
-      { title: "From Scratch — System Design Learning Hub" },
+      { title: "NEET" },
       {
         name: "description",
         content:
-          "A hands-on, self-directed curriculum for building real distributed systems, engineering trade-offs, and production-ready artifacts.",
+          "Study systems through lessons, exercises, and practical projects.",
       },
-      { property: "og:title", content: "From Scratch — System Design Learning Hub" },
+      { property: "og:title", content: "NEET" },
       {
         property: "og:description",
         content:
-          "Learn system design from scratch through structured paths, worked trade-offs, and rubric-backed engineering labs.",
+          "Explore courses, exercises, and projects in systems thinking and design.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -41,33 +41,33 @@ export const Route = createFileRoute("/")({
 const JOURNEY_STEPS = [
   {
     num: "01",
-    title: "The Problem",
-    body: "System design material is scattered across blog posts, papers, and interview scripts. The mental models rarely line up into one coherent frame.",
-    meta: "Search · Mental models",
+    title: "Understand",
+    body: "Start with core concepts, terminology, and mental models.",
+    meta: "Read / Understand",
     href: "/paths/orientation-and-grounding",
     activeDots: 1,
   },
   {
     num: "02",
-    title: "Build It",
-    body: "Trace stocks, feedback loops, queues, replication, and backpressure from first principles instead of memorizing box diagrams.",
-    meta: "Know · Core mechanics",
+    title: "Learn",
+    body: "Study architecture, data, networks, and distributed systems.",
+    meta: "Study / Connect",
     href: "/paths",
     activeDots: 2,
   },
   {
     num: "03",
-    title: "Use It",
-    body: "Stress-test your assumptions under 10x surges, partial failures, and tight SLAs using deterministic trade-off scenarios and exercises.",
-    meta: "Adapt · Trade-off drills",
+    title: "Practise",
+    body: "Compare design choices and test trade-offs with exercises.",
+    meta: "Apply / Evaluate",
     href: "/exercises",
     activeDots: 3,
   },
   {
     num: "04",
-    title: "Ship It",
-    body: "Produce review-ready engineering artifacts, ADRs, and a 6-milestone capstone dossier evaluated against transparent domain rubrics.",
-    meta: "Proceed · Real artifacts",
+    title: "Build",
+    body: "Turn what you learn into projects and engineering decisions.",
+    meta: "Build / Review",
     href: "/labs",
     activeDots: 4,
   },
@@ -171,13 +171,12 @@ function Home() {
       <section className="px-4 py-12 sm:px-6 lg:px-8 lg:py-20">
         <div className="mx-auto max-w-7xl">
           <div className="mb-14 text-center">
-            <span className="section-label">System Design | From Scratch</span>
+            <span className="section-label">SYSTEMS / DESIGN / ENGINEERING</span>
             <h1 className="section-title mx-auto max-w-4xl text-4xl text-text sm:text-5xl lg:text-6xl">
-              Learn system design from scratch. Stay ahead of what&apos;s next.
+              Learn how systems work. Learn to design them.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-base text-muted sm:text-lg">
-              A hands-on, self-directed curriculum for mastering systems thinking, distributed
-              architecture, and production-ready engineering judgment.
+              Study systems through lessons, exercises, and practical projects.
             </p>
           </div>
 
@@ -433,7 +432,7 @@ function Home() {
                       <p className="text-sm text-muted">{activeCourse.tagline}</p>
                     </div>
                     <Link href={`/paths/${activeCourse.slug}`} className="btn-soft text-xs">
-                      Open Path Overview
+                      Course details
                     </Link>
                   </div>
                   <ol className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -482,13 +481,12 @@ function Home() {
         <div className="mx-auto max-w-7xl">
           <div className="mb-12 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-end">
             <div>
-              <span className="section-label">Curriculum Explorer</span>
+              <span className="section-label">COURSES</span>
               <h2 className="section-title text-3xl text-text sm:text-4xl">
-                Build things people actually use
+                Choose a subject
               </h2>
               <p className="mt-2 max-w-xl text-sm text-muted sm:text-base">
-                Choose the discipline you want to deepen. Each path pairs concise lessons with
-                worked engineering decisions and a concrete artifact.
+                Browse the available courses by subject.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -509,7 +507,7 @@ function Home() {
                 ))}
               </select>
               <Link href="/paths" className="btn-ink text-sm">
-                View all paths
+                View all courses
               </Link>
             </div>
           </div>

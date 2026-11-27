@@ -1,10 +1,10 @@
-# System Architecture — NEET Systems Engineering Learning Platform
+# Architecture
 
-## 1. Product Objective
+## 1. Product Scope
 
-> *"Help learners develop the judgment to design and engineer real-world systems well."*
 
-The platform combines a structured 16-competency curriculum, rubric-evaluated practice studio (labs, worked engineering trade-off scenarios, and a 6-milestone traceable capstone), a 120-volume/320-source canonical knowledge pack, and an evidence-backed Proceed Scale portfolio.
+
+NEET is an early-stage learning project focused on systems thinking, system design, and practical engineering. The current codebase includes a competency model, course material, practice labs, engineering scenarios, a capstone, and a source-backed knowledge pack.
 
 ## 2. Runtime & Framework Stack
 
