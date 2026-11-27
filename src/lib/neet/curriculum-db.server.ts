@@ -765,8 +765,54 @@ export function deleteLessonDb(
   }
 }
 
+function ensureCanonicalCompetencyRowsDb(db: DatabaseSync): void {
+  if (process.env["NEET_SKIP_DEFAULT_CURRICULUM_SEED"] === "1") return;
+  const existing = new Set(
+    (db.prepare("SELECT id FROM curriculum_competencies").all() as Array<{ id: string }>).map(
+      (row) => row.id,
+    ),
+  );
+  const blurbs = new Map(SKILLS.map((skill) => [skill.id, skill.blurb]));
+  const crosswalk = new Map(INCOSE_CROSSWALK.map((item) => [item.neetCompetencyId, item]));
+  const now = new Date().toISOString();
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO curriculum_competencies (
+      id, code, domain, title, blurb, definition, bloom_target,
+      prerequisites_json, relations_json, framework_anchors_json,
+      level_descriptors_json, mapped_volumes_json, role_tags_json,
+      crosswalk_json, version, sort_order, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  COMPETENCIES.forEach((competency, index) => {
+    if (existing.has(competency.id)) return;
+    const mapped = crosswalk.get(competency.id);
+    insert.run(
+      competency.id,
+      competency.code,
+      competency.domain,
+      competency.title,
+      blurbs.get(competency.id) ?? competency.definition.slice(0, 140),
+      competency.definition,
+      competency.bloomTarget,
+      JSON.stringify(competency.prerequisites),
+      JSON.stringify(competency.relations),
+      JSON.stringify(competency.frameworkAnchors),
+      JSON.stringify(competency.levelDescriptors),
+      JSON.stringify(competency.mappedVolumes),
+      JSON.stringify(competency.roleTags),
+      mapped ? JSON.stringify(mapped) : null,
+      competency.version,
+      (index + 1) * 10,
+      now,
+    );
+  });
+}
+
 export function listCompetenciesDb(db: DatabaseSync = getDatabase()): DynamicCompetencyRecord[] {
   ensureCurriculumSeeded(db);
+  // A user-created course may pre-date the starter catalogue. Fill only the missing
+  // canonical competencies rather than skipping competency seeding because a course exists.
+  ensureCanonicalCompetencyRowsDb(db);
   const rows = db
     .prepare("SELECT * FROM curriculum_competencies ORDER BY sort_order ASC, code ASC")
     .all() as unknown as Array<Record<string, unknown>>;
