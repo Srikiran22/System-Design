@@ -151,7 +151,7 @@ async function ensureCanonicalCompetencyRows(
         level_descriptors_json: competency.levelDescriptors,
         mapped_volumes_json: competency.mappedVolumes,
         role_tags_json: competency.roleTags,
-        crosswalk_json: mapped ? { ...mapped } : null,
+        crosswalk_json: mapped ? { ...mapped, neetCompetencyId: competency.id } : null,
         version: competency.version,
         sort_order: (COMPETENCIES.indexOf(competency) + 1) * 10,
         updated_at: new Date().toISOString(),
