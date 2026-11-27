@@ -72,7 +72,6 @@ function Library() {
       }
       return n;
     });
-  const words = articles.reduce((n, a) => n + a.word_count, 0);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-5 md:py-16">
@@ -106,7 +105,7 @@ function Library() {
       </div>
 
       <p className="mt-10 text-xs font-medium uppercase tracking-[0.2em] text-accent">
-        TRACKS / {tracks.length} / VOLUMES / {articles.length}
+        TRACKS: {tracks.length} / VOLUMES: {articles.length}
       </p>
       <p className="mt-2 text-muted">Open a folder to view its readings.</p>
 
@@ -128,10 +127,10 @@ function Library() {
                 onClick={() => toggle(t)}
                 className="group flex w-full items-center justify-between gap-3 text-left"
               >
-                <span className="font-display text-lg font-bold tracking-tight text-text transition group-hover:text-accent">
+                <span className="min-w-0 flex-1 font-display text-lg font-bold tracking-tight text-text transition group-hover:text-accent">
                   {t}
                 </span>
-                <span className="text-xs text-muted">
+                <span className="whitespace-nowrap text-xs text-muted">
                   {items.length} {items.length === 1 ? "volume" : "volumes"} · ~
                   {mins < 60 ? `${mins} min` : `${Math.round(mins / 60)}h`}
                 </span>
